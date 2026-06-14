@@ -207,7 +207,7 @@ int main(int, char**)
         {
             // Center the setup card inside AppWindow
             float card_w = 460.0f * fontScale;
-            float card_h = 370.0f * fontScale;
+            float card_h = 390.0f * fontScale;
             
             ImGui::SetCursorPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
             
@@ -226,7 +226,7 @@ int main(int, char**)
             ImGui::InputText("Confirm Password", setupPass2, IM_ARRAYSIZE(setupPass2), ImGuiInputTextFlags_Password);
 
             ImGui::Spacing();
-            if (ImGui::Button("Create Vault", ImVec2(-1, 35)))
+            if (ImGui::Button("Create Vault", ImVec2(-1, 35.0f * fontScale)))
             {
                 std::string p1(setupPass1);
                 std::string p2(setupPass2);
@@ -275,7 +275,7 @@ int main(int, char**)
         {
             // Center the login card inside AppWindow
             float card_w = 460.0f * fontScale;
-            float card_h = 350.0f * fontScale;
+            float card_h = 370.0f * fontScale;
 
             ImGui::SetCursorPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
             
@@ -307,7 +307,7 @@ int main(int, char**)
 
                 ImGui::Spacing();
 
-                if (ImGui::Button("Unlock", ImVec2(-1, 35)) || inputSubmitted)
+                if (ImGui::Button("Unlock", ImVec2(-1, 35.0f * fontScale)) || inputSubmitted)
                 {
                     std::string enteredPassword(loginPass);
                     if (authManager.verifyVaultPassword(enteredPassword))
@@ -352,9 +352,10 @@ int main(int, char**)
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.00f, 1.00f), "PASSWORD MANAGER VAULT");
             
-            // Align the lock button to the right
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100.0f * fontScale);
-            if (ImGui::Button("Lock Vault", ImVec2(100.0f * fontScale, 26.0f)))
+            // Align the lock button to the right, calculating size dynamically
+            float lock_btn_width = ImGui::CalcTextSize("Lock Vault").x + style.FramePadding.x * 2.0f;
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - lock_btn_width - style.WindowPadding.x);
+            if (ImGui::Button("Lock Vault", ImVec2(0.0f, 26.0f)))
             {
                 // Auto save
                 storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
@@ -376,16 +377,21 @@ int main(int, char**)
             // --- LEFT PANEL ---
             ImGui::BeginChild("LeftPane", ImVec2(left_pane_w, 0.0f), true, ImGuiWindowFlags_None);
             
-            // Search Bar & Save button
+            // Search Bar & Save button (Aligned dynamically to prevent overlapping)
             ImGui::AlignTextToFramePadding();
             ImGui::Text("Filter:");
             ImGui::SameLine();
-            ImGui::PushItemWidth(200.0f * fontScale);
+            
+            float save_btn_width = ImGui::CalcTextSize("Save Changes").x + style.FramePadding.x * 2.0f;
+            float avail_width = ImGui::GetContentRegionAvail().x;
+            
+            // Set search input width to take up all remaining width except the Save button and spacing
+            ImGui::PushItemWidth(avail_width - save_btn_width - 15.0f);
             ImGui::InputText("##Search", searchFilter, IM_ARRAYSIZE(searchFilter));
             ImGui::PopItemWidth();
 
-            ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f * fontScale);
-            if (ImGui::Button("Save Changes", ImVec2(130.0f * fontScale, 25.0f)))
+            ImGui::SameLine();
+            if (ImGui::Button("Save Changes", ImVec2(0.0f, 25.0f)))
             {
                 if (storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword))
                 {
@@ -413,13 +419,13 @@ int main(int, char**)
                 ImGui::Spacing();
             }
 
-            // Table of Credentials
+            // Table of Credentials (column actions has a safer size scaling with fontScale)
             if (ImGui::BeginTable("CredentialsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0.0f, -10.0f)))
             {
                 ImGui::TableSetupColumn("Website", ImGuiTableColumnFlags_WidthStretch, 2.0f);
                 ImGui::TableSetupColumn("Username", ImGuiTableColumnFlags_WidthStretch, 2.0f);
                 ImGui::TableSetupColumn("Password", ImGuiTableColumnFlags_WidthStretch, 3.0f);
-                ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 140.0f * fontScale);
+                ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 155.0f * fontScale);
                 ImGui::TableHeadersRow();
 
                 std::string filterKey(searchFilter);
@@ -469,9 +475,9 @@ int main(int, char**)
 
                     ImGui::TableSetColumnIndex(3);
                     
-                    // Show/Hide Toggle Button
+                    // Show/Hide Toggle Button (Auto-sized)
                     std::string showLabel = visible ? "Hide##" + std::to_string(i) : "Show##" + std::to_string(i);
-                    if (ImGui::Button(showLabel.c_str(), ImVec2(55.0f * fontScale, 20.0f)))
+                    if (ImGui::Button(showLabel.c_str(), ImVec2(0.0f, 20.0f)))
                     {
                         if (visible)
                             visiblePasswords.erase(key);
@@ -481,13 +487,13 @@ int main(int, char**)
 
                     ImGui::SameLine();
 
-                    // Delete Button
+                    // Delete Button (Auto-sized)
                     std::string delLabel = "Delete##" + std::to_string(i);
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.15f, 0.15f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.90f, 0.25f, 0.25f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.10f, 0.10f, 1.0f));
                     
-                    if (ImGui::Button(delLabel.c_str(), ImVec2(60.0f * fontScale, 20.0f)))
+                    if (ImGui::Button(delLabel.c_str(), ImVec2(0.0f, 20.0f)))
                     {
                         vaultManager.removeCredential(site, user);
                         // Save immediately on deletion for safety
@@ -525,7 +531,7 @@ int main(int, char**)
             ImGui::Spacing();
             ImGui::Spacing();
             
-            if (ImGui::Button("Add Credential", ImVec2(-1, 35)))
+            if (ImGui::Button("Add Credential", ImVec2(-1, 35.0f * fontScale)))
             {
                 std::string site(addSite);
                 std::string user(addUser);
