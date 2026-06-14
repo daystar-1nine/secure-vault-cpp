@@ -8,30 +8,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Fetch dependencies
 include(FetchContent)
 
-# 1. Fetch GLFW
+# 1. Fetch webview (Lightweight Web View)
 FetchContent_Declare(
-    glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG 3.3.8
+    webview
+    GIT_REPOSITORY https://github.com/webview/webview.git
+    GIT_TAG master
 )
-set(GLFW_BUILD_EXAMPLES OFF CACHE INTERNAL "")
-set(GLFW_BUILD_TESTS OFF CACHE INTERNAL "")
-set(GLFW_BUILD_DOCS OFF CACHE INTERNAL "")
-set(GLFW_INSTALL OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(glfw)
+FetchContent_MakeAvailable(webview)
 
-# 2. Fetch Dear ImGui
-FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.90.4
-)
-FetchContent_GetProperties(imgui)
-if(NOT imgui_POPULATED)
-    FetchContent_Populate(imgui)
-endif()
-
-# 3. Fetch Monocypher
+# 2. Fetch Monocypher
 FetchContent_Declare(
     monocypher
     GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
@@ -41,18 +26,6 @@ FetchContent_GetProperties(monocypher)
 if(NOT monocypher_POPULATED)
     FetchContent_Populate(monocypher)
 endif()
-
-# Define ImGui source files (compiling them directly)
-set(IMGUI_DIR ${imgui_SOURCE_DIR})
-set(IMGUI_SOURCES
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
-    ${IMGUI_DIR}/backends/imgui_impl_opengl2.cpp
-)
 
 # Define Monocypher source files
 set(MONOCYPHER_DIR ${monocypher_SOURCE_DIR})
@@ -67,30 +40,30 @@ set(SOURCES
     src/encryption/Encryption.cpp
     src/storage/StorageManager.cpp
     src/vault/VaultManager.cpp
-    ${IMGUI_SOURCES}
+    src/web/webview_impl.cpp
     ${MONOCYPHER_SOURCES}
 )
 
-# Define executable (use WIN32 to hide terminal window on Windows)
+# Define executable (use WIN32 to run as a background windows application with no console window)
 add_executable(password_manager WIN32 ${SOURCES})
 
 # Include directories
 target_include_directories(password_manager PRIVATE 
     include
-    ${IMGUI_DIR}
-    ${IMGUI_DIR}/backends
     ${MONOCYPHER_DIR}/src
 )
 
-# Link GLFW and system OpenGL libraries
-target_link_libraries(password_manager PRIVATE glfw)
+# Threading library
+find_package(Threads REQUIRED)
+
+# Link libraries (ws2_32 is required on Windows for network sockets)
+target_link_libraries(password_manager PRIVATE Threads::Threads webview::core)
 if(WIN32)
-    target_link_libraries(password_manager PRIVATE opengl32 gdi32)
-else()
-    target_link_libraries(password_manager PRIVATE OpenGL)
+    target_compile_definitions(password_manager PRIVATE WEBVIEW_EDGE)
+    target_link_libraries(password_manager PRIVATE ws2_32 crypt32 ole32 comctl32 oleaut32 uuid shlwapi version)
 endif()
 
-# Compiler warning configurations (avoid Werror to prevent external dependency warnings from stopping the build)
+# Compiler warning configurations
 if(MSVC)
     target_compile_options(password_manager PRIVATE /W3)
 else()
