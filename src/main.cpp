@@ -96,7 +96,7 @@ int main(int, char**)
     style.FrameRounding = 5.0f;
     style.PopupRounding = 5.0f;
     style.GrabRounding = 5.0f;
-    style.WindowBorderSize = 1.0f;
+    style.WindowBorderSize = 0.0f; // Disable root window borders for a clean flat app look
     style.FrameBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
     style.FramePadding = ImVec2(10.0f, 8.0f);
@@ -104,26 +104,22 @@ int main(int, char**)
     style.ScrollbarRounding = 12.0f;
 
     // Deep Charcoal / Soft Blue-Gray color palette
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.09f, 0.11f, 1.00f);      // Dark Charcoal
-    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.15f, 1.00f);       // Subtle gray for cards
-    style.Colors[ImGuiCol_Border] = ImVec4(0.20f, 0.20f, 0.25f, 1.00f);        // Muted gray-blue outline
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.09f, 0.11f, 1.00f);      // Dark Charcoal App Background
+    style.Colors[ImGuiCol_ChildBg] = ImVec4(0.13f, 0.13f, 0.16f, 1.00f);       // Card background
+    style.Colors[ImGuiCol_Border] = ImVec4(0.18f, 0.18f, 0.22f, 1.00f);        // Muted gray-blue outline
     style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
     
     style.Colors[ImGuiCol_FrameBg] = ImVec4(0.16f, 0.16f, 0.20f, 1.00f);       // Inputs background
     style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.22f, 0.28f, 1.00f);
     style.Colors[ImGuiCol_FrameBgActive] = ImVec4(0.26f, 0.26f, 0.32f, 1.00f);
     
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.14f, 0.14f, 0.18f, 1.00f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.18f, 0.18f, 0.24f, 1.00f);
-    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.10f, 0.10f, 0.14f, 1.00f);
-    
     style.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.42f, 0.70f, 1.00f);        // Muted Royal Blue Button
     style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.24f, 0.52f, 0.85f, 1.00f);
     style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.14f, 0.35f, 0.60f, 1.00f);
     
-    style.Colors[ImGuiCol_Header] = ImVec4(0.22f, 0.28f, 0.38f, 1.00f);        // Table Headers
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.28f, 0.36f, 0.48f, 1.00f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.18f, 0.24f, 0.32f, 1.00f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.20f, 0.25f, 0.35f, 1.00f);        // Table Headers
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.32f, 0.45f, 1.00f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.16f, 0.20f, 0.30f, 1.00f);
 
     style.Colors[ImGuiCol_Text] = ImVec4(0.92f, 0.92f, 0.95f, 1.00f);          // Clear off-white text
 
@@ -174,18 +170,17 @@ int main(int, char**)
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         
-        // Full screen transparent workspace
+        // 🔹 ONE SINGLE Full screen app window covering the entire viewport
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2((float)display_w, (float)display_h));
-        ImGuiWindowFlags root_flags = ImGuiWindowFlags_NoTitleBar | 
-                                      ImGuiWindowFlags_NoResize | 
-                                      ImGuiWindowFlags_NoMove | 
-                                      ImGuiWindowFlags_NoCollapse | 
-                                      ImGuiWindowFlags_NoBringToFrontOnFocus | 
-                                      ImGuiWindowFlags_NoNavFocus |
-                                      ImGuiWindowFlags_NoBackground;
+        ImGuiWindowFlags app_flags = ImGuiWindowFlags_NoTitleBar | 
+                                     ImGuiWindowFlags_NoResize | 
+                                     ImGuiWindowFlags_NoMove | 
+                                     ImGuiWindowFlags_NoCollapse | 
+                                     ImGuiWindowFlags_NoBringToFrontOnFocus | 
+                                     ImGuiWindowFlags_NoNavFocus;
 
-        ImGui::Begin("RootWorkspace", NULL, root_flags);
+        ImGui::Begin("AppWindow", NULL, app_flags);
 
         // Helper Lambda to draw Font Size Control
         auto DrawFontSettings = [&]() {
@@ -210,13 +205,14 @@ int main(int, char**)
 
         if (viewState == VIEW_SETUP)
         {
-            // Center the setup card, scaling with fontScale
-            float card_w = 480.0f * fontScale;
-            float card_h = 390.0f * fontScale;
-            ImGui::SetNextWindowPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(card_w, card_h));
+            // Center the setup card inside AppWindow
+            float card_w = 460.0f * fontScale;
+            float card_h = 370.0f * fontScale;
             
-            ImGui::Begin("Setup Vault", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+            ImGui::SetCursorPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
+            
+            // Draw card as a flat borderless child window
+            ImGui::BeginChild("SetupCard", ImVec2(card_w, card_h), true, ImGuiWindowFlags_None);
             
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.00f, 1.00f), "FIRST TIME SETUP");
@@ -273,17 +269,18 @@ int main(int, char**)
 
             DrawFontSettings();
 
-            ImGui::End();
+            ImGui::EndChild();
         }
         else if (viewState == VIEW_LOGIN)
         {
-            // Center the login card, scaling with fontScale
-            float card_w = 480.0f * fontScale;
-            float card_h = 370.0f * fontScale;
-            ImGui::SetNextWindowPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(card_w, card_h));
+            // Center the login card inside AppWindow
+            float card_w = 460.0f * fontScale;
+            float card_h = 350.0f * fontScale;
 
-            ImGui::Begin("Unlock Vault", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+            ImGui::SetCursorPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
+            
+            // Draw card as a flat borderless child window
+            ImGui::BeginChild("LoginCard", ImVec2(card_w, card_h), true, ImGuiWindowFlags_None);
 
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.00f, 1.00f), "SECURE LOGIN");
@@ -347,19 +344,17 @@ int main(int, char**)
 
             DrawFontSettings();
 
-            ImGui::End();
+            ImGui::EndChild();
         }
         else if (viewState == VIEW_DASHBOARD)
         {
-            // Full Screen dashboard
-            ImGui::SetNextWindowPos(ImVec2(10, 10));
-            ImGui::SetNextWindowSize(ImVec2((float)display_w - 20.0f, (float)display_h - 20.0f));
-            ImGui::Begin("Dashboard", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-
-            // Title line and lock button
+            // Title line and lock button (Rendered directly in the main full screen container)
+            ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.00f, 1.00f), "PASSWORD MANAGER VAULT");
-            ImGui::SameLine(ImGui::GetWindowWidth() - 120.0f * fontScale);
-            if (ImGui::Button("Lock Vault", ImVec2(100.0f * fontScale, 25.0f)))
+            
+            // Align the lock button to the right
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100.0f * fontScale);
+            if (ImGui::Button("Lock Vault", ImVec2(100.0f * fontScale, 26.0f)))
             {
                 // Auto save
                 storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
@@ -370,15 +365,16 @@ int main(int, char**)
                 errorMessage = "";
             }
 
+            ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
 
             // 🔹 Split Layout: Left side for viewing/searching, Right side for adding entries and settings
-            float right_pane_w = 330.0f * fontScale;
+            float right_pane_w = 320.0f * fontScale;
             float left_pane_w = ImGui::GetContentRegionAvail().x - right_pane_w - 15.0f;
             
             // --- LEFT PANEL ---
-            ImGui::BeginChild("LeftPane", ImVec2(left_pane_w, 0.0f), true);
+            ImGui::BeginChild("LeftPane", ImVec2(left_pane_w, 0.0f), true, ImGuiWindowFlags_None);
             
             // Search Bar & Save button
             ImGui::AlignTextToFramePadding();
@@ -508,7 +504,7 @@ int main(int, char**)
             ImGui::SameLine();
 
             // --- RIGHT PANEL (ADD ENTRY FORM & DISPLAY SETTINGS) ---
-            ImGui::BeginChild("RightPane", ImVec2(right_pane_w, 0.0f), true);
+            ImGui::BeginChild("RightPane", ImVec2(right_pane_w, 0.0f), true, ImGuiWindowFlags_None);
             
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.00f, 1.00f), "ADD NEW CREDENTIAL");
@@ -566,16 +562,14 @@ int main(int, char**)
             DrawFontSettings();
 
             ImGui::EndChild();
-
-            ImGui::End();
         }
 
-        ImGui::End(); // RootWorkspace
+        ImGui::End(); // AppWindow
 
         // Rendering
         ImGui::Render();
         glViewport(0, 0, display_w, display_h);
-        glClearColor(0.12f, 0.12f, 0.12f, 1.0f);
+        glClearColor(0.09f, 0.09f, 0.11f, 1.0f); // Clean flat color matching app background
         glClear(GL_COLOR_BUFFER_BIT);
         
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
