@@ -29,14 +29,14 @@ bool AuthManager::createVaultPassword(const std::string& password)
     }
     std::string saltHex = toHex(salt);
 
-    // 2. Hash password + salt using Argon2id via Monocypher v4 structs
+    // 2. Hash password + salt using Argon2id via Monocypher v4 structs (V2: 16 MB blocks, 4 passes)
     std::vector<uint8_t> hash(32);
-    std::vector<uint8_t> workArea(1024 * 1024); // 1 MB work area
+    std::vector<uint8_t> workArea(16 * 1024 * 1024); // 16 MB work area
     
     crypto_argon2_config config;
     config.algorithm = CRYPTO_ARGON2_ID;
-    config.nb_blocks = 1024; // 1 MB
-    config.nb_passes = 3;
+    config.nb_blocks = 16384; // 16 MB
+    config.nb_passes = 4;
     config.nb_lanes = 1;
 
     crypto_argon2_inputs inputs;
@@ -53,8 +53,8 @@ bool AuthManager::createVaultPassword(const std::string& password)
 
     std::string hashHex = toHex(hash);
 
-    // 3. Save config with 0 failed attempts and 0 lockout time
-    return saveConfig(saltHex, hashHex, 0, 0);
+    // 3. Save config with 0 failed attempts and 0 lockout time, and the version tag
+    return saveConfig(saltHex, hashHex, 0, 0, "SV02");
 }
 
 // 🔹 Verify vault password
@@ -67,32 +67,55 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
     if (!file)
         return false;
 
-    std::string saltHex, storedHashHex;
-    std::string failedAttemptsStr, lockUntilStr;
-    
-    if (!std::getline(file, saltHex, '|') ||
-        !std::getline(file, storedHashHex, '|') ||
-        !std::getline(file, failedAttemptsStr, '|') ||
-        !std::getline(file, lockUntilStr))
+    std::string line;
+    if (!std::getline(file, line))
     {
         return false;
     }
     file.close(); // Close file before potential re-writing
+
+    std::vector<std::string> parts;
+    std::stringstream ss(line);
+    std::string part;
+    while (std::getline(ss, part, '|'))
+    {
+        parts.push_back(part);
+    }
+
+    if (parts.size() < 4)
+        return false;
+
+    std::string saltHex = parts[0];
+    std::string storedHashHex = parts[1];
+    std::string failedAttemptsStr = parts[2];
+    std::string lockUntilStr = parts[3];
+    std::string version = (parts.size() >= 5) ? parts[4] : "legacy";
 
     int currentFailedAttempts = 0;
     try {
         currentFailedAttempts = std::stoi(failedAttemptsStr);
     } catch (...) {}
 
-    // Verify input password using Argon2id via Monocypher v4 structs
+    // Verify input password using Argon2id parameters based on version
+    uint32_t blocks = 1024; // Default to V1 parameters (1 MB)
+    uint32_t passes = 3;
+    size_t workAreaSize = 1024 * 1024;
+
+    if (version == "SV02")
+    {
+        blocks = 16384; // V2 parameters (16 MB)
+        passes = 4;
+        workAreaSize = 16 * 1024 * 1024;
+    }
+
     std::vector<uint8_t> saltBytes = fromHex(saltHex);
     std::vector<uint8_t> hashBytes(32);
-    std::vector<uint8_t> workArea(1024 * 1024); // 1 MB work area
+    std::vector<uint8_t> workArea(workAreaSize);
     
     crypto_argon2_config config;
     config.algorithm = CRYPTO_ARGON2_ID;
-    config.nb_blocks = 1024; // 1 MB
-    config.nb_passes = 3;
+    config.nb_blocks = blocks;
+    config.nb_passes = passes;
     config.nb_lanes = 1;
 
     crypto_argon2_inputs inputs;
@@ -111,8 +134,8 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
 
     if (inputHashHex == storedHashHex)
     {
-        // Reset failed attempts & lockout
-        saveConfig(saltHex, storedHashHex, 0, 0);
+        // Reset failed attempts & lockout, preserving version
+        saveConfig(saltHex, storedHashHex, 0, 0, version);
         return true;
     }
 
@@ -129,7 +152,7 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
         lockUntilTimestamp = now + lockSeconds;
     }
 
-    saveConfig(saltHex, storedHashHex, currentFailedAttempts, lockUntilTimestamp);
+    saveConfig(saltHex, storedHashHex, currentFailedAttempts, lockUntilTimestamp, version);
     return false;
 }
 
@@ -167,7 +190,7 @@ long long AuthManager::getLockoutRemainingTime() const
 }
 
 // 🔐 Persistent config helper
-bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil) const
+bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil, const std::string& version) const
 {
     std::filesystem::create_directories("data");
     std::ofstream file("data/config.dat");
@@ -175,6 +198,10 @@ bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, i
         return false;
 
     file << salt << "|" << hash << "|" << failedAttempts << "|" << lockUntil;
+    if (!version.empty())
+    {
+        file << "|" << version;
+    }
     return true;
 }
 

@@ -30,7 +30,7 @@ public:
 
 private:
     // 🔐 Persistent config helper
-    bool saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil) const;
+    bool saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil, const std::string& version = "") const;
 
     // 🔄 Hex helpers
     std::string toHex(const std::vector<uint8_t>& data) const;

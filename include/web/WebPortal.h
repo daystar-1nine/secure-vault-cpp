@@ -478,7 +478,13 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             <form id="setup-form" onsubmit="handleSetup(event)">
                 <div class="form-group">
                     <label for="setup-pass">Master Password</label>
-                    <input type="password" id="setup-pass" required placeholder="Choose a secure password...">
+                    <input type="password" id="setup-pass" required placeholder="Choose a secure password..." oninput="checkMasterPasswordStrength(this.value)">
+                    <div id="strength-meter-container" style="margin-top: 6px; display: none;">
+                        <div style="height: 4px; width: 100%; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden;">
+                            <div id="strength-bar" style="height: 100%; width: 0%; background: var(--accent-red); transition: width 0.3s, background-color 0.3s;"></div>
+                        </div>
+                        <div id="strength-text" style="font-size: 0.75em; text-align: left; margin-top: 4px; color: var(--text-secondary);">Weak</div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="setup-confirm">Confirm Password</label>
@@ -587,6 +593,33 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                         <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add Record</button>
                     </form>
 
+                    <!-- Secure Password Generator Section -->
+                    <div class="settings-section" style="margin-top: 20px;">
+                        <div class="settings-title">Secure Password Generator</div>
+                        <div class="form-group" style="margin-bottom: 10px;">
+                            <label for="gen-length">Length: <span id="gen-length-val">16</span></label>
+                            <input type="range" id="gen-length" min="8" max="64" value="16" class="scale-slider" oninput="document.getElementById('gen-length-val').textContent=this.value; handleGeneratePassword();">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 0.85em; text-align: left;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="checkbox" id="gen-upper" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> A-Z
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="checkbox" id="gen-lower" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> a-z
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="checkbox" id="gen-digit" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> 0-9
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                <input type="checkbox" id="gen-symbol" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> Special
+                            </label>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
+                            <input type="text" id="gen-result" readonly placeholder="Click Gen..." style="font-family: monospace; font-size: 0.9em; padding: 8px 12px; background: rgba(10, 10, 15, 0.7); cursor: default; border: 1px solid var(--card-border); border-radius: 8px; color: var(--text-primary); flex-grow: 1;">
+                            <button onclick="copyGeneratedPassword()" class="table-btn" style="min-width: 50px; padding: 8px 12px;">Copy</button>
+                        </div>
+                    </div>
+
                     <div class="settings-section">
                         <div class="settings-title">Display Settings</div>
                         <div class="scale-slider-container">
@@ -612,6 +645,66 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         let clipboardTimer = null;
         let inactivityTimer = null;
         const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes auto-lock timeout
+
+        // 🔹 Password strength checker (12-char strict complexity rules)
+        function checkMasterPasswordStrength(pass) {
+            const container = document.getElementById("strength-meter-container");
+            const bar = document.getElementById("strength-bar");
+            const text = document.getElementById("strength-text");
+            
+            if (!pass) {
+                container.style.display = "none";
+                return;
+            }
+            container.style.display = "block";
+            
+            let score = 0;
+            if (pass.length >= 8) score++;
+            if (pass.length >= 12) score++;
+            if (/[A-Z]/.test(pass)) score++;
+            if (/[0-9]/.test(pass)) score++;
+            if (/[^A-Za-z0-9]/.test(pass)) score++;
+            
+            let percentage = (score / 5) * 100;
+            bar.style.width = percentage + "%";
+            
+            if (score <= 2) {
+                bar.style.backgroundColor = "var(--accent-red)";
+                text.textContent = "Weak (Minimum 12 chars + mixed case/numbers/symbols required)";
+                text.style.color = "#fca5a5";
+            } else if (score <= 4) {
+                bar.style.backgroundColor = "#fbbf24";
+                text.textContent = "Medium (Try adding more symbols or length)";
+                text.style.color = "#fde047";
+            } else {
+                bar.style.backgroundColor = "var(--success-green)";
+                text.textContent = "Strong Master Password";
+                text.style.color = "#86efac";
+            }
+        }
+
+        // 🔹 Secure password generator handlers
+        function handleGeneratePassword() {
+            const length = parseInt(document.getElementById("gen-length").value);
+            const upper = document.getElementById("gen-upper").checked;
+            const lower = document.getElementById("gen-lower").checked;
+            const digit = document.getElementById("gen-digit").checked;
+            const symbol = document.getElementById("gen-symbol").checked;
+
+            window.api_generate_password(length.toString(), upper.toString(), lower.toString(), digit.toString(), symbol.toString())
+                .then(data => {
+                    if (data && data.password) {
+                        document.getElementById("gen-result").value = data.password;
+                    }
+                })
+                .catch(() => showAlert("Failed to generate password."));
+        }
+
+        function copyGeneratedPassword() {
+            const text = document.getElementById("gen-result").value;
+            if (!text) return;
+            copyPassword(text);
+        }
 
         // 🔹 Inactivity tracking
         function resetInactivityTimer() {
@@ -766,11 +859,22 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 return;
             }
 
+            if (pass.length < 12) {
+                showAlert("Master password must be at least 12 characters long.");
+                return;
+            }
+
+            if (!/[A-Z]/.test(pass) || !/[a-z]/.test(pass) || !/[0-9]/.test(pass) || !/[^A-Za-z0-9]/.test(pass)) {
+                showAlert("Master password must contain uppercase, lowercase, numbers, and symbols.");
+                return;
+            }
+
             window.api_setup(pass)
             .then(data => {
                 // Secure wipe inputs
                 document.getElementById("setup-pass").value = "";
                 document.getElementById("setup-confirm").value = "";
+                document.getElementById("strength-meter-container").style.display = "none";
 
                 if (data.success) {
                     showAlert("Vault initialized successfully! Please login.", true);
@@ -810,6 +914,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             
             fetchCredentials();
             resetInactivityTimer();
+            handleGeneratePassword(); // Generate a random password on load
         }
 
         // 🔹 Fetch Credentials
@@ -885,7 +990,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                         visiblePasswords.delete(key);
                         renderTable();
                     } else {
-                        openVerifyModal(key);
+                        openVerifyModal("show", key);
                     }
                 };
                 tdActions.appendChild(btnToggle);
@@ -895,9 +1000,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 btnDelete.className = "table-btn table-btn-danger";
                 btnDelete.textContent = "Delete";
                 btnDelete.onclick = () => {
-                    if (confirm(`Are you sure you want to delete credentials for ${c.website}?`)) {
-                        handleDeleteCredential(c.website, c.username);
-                    }
+                    openVerifyModal("delete", { site: c.website, user: c.username });
                 };
                 tdActions.appendChild(btnDelete);
 
@@ -982,17 +1085,28 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         }
 
         // 🔹 Verification Modal handlers
-        let pendingVerifyKey = null;
+        let pendingVerifyAction = null;
+        let pendingVerifyData = null;
 
-        function openVerifyModal(key) {
-            pendingVerifyKey = key;
+        function openVerifyModal(action, data) {
+            pendingVerifyAction = action;
+            pendingVerifyData = data;
             document.getElementById("verify-pass").value = "";
+            
+            const prompt = document.getElementById("verify-prompt");
+            if (action === "delete") {
+                prompt.textContent = `Please enter your master password to confirm deleting credentials for "${data.site}".`;
+            } else {
+                prompt.textContent = "Please enter your master password to reveal this credential.";
+            }
+
             document.getElementById("verify-modal").classList.remove("hidden");
             document.getElementById("verify-pass").focus();
         }
 
         function closeVerifyModal() {
-            pendingVerifyKey = null;
+            pendingVerifyAction = null;
+            pendingVerifyData = null;
             document.getElementById("verify-pass").value = "";
             document.getElementById("verify-modal").classList.add("hidden");
         }
@@ -1005,9 +1119,15 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 .then(data => {
                     document.getElementById("verify-pass").value = "";
                     if (data.success) {
-                        if (pendingVerifyKey) {
-                            visiblePasswords.add(pendingVerifyKey);
-                            renderTable();
+                        if (pendingVerifyAction === "show") {
+                            if (pendingVerifyData) {
+                                visiblePasswords.add(pendingVerifyData);
+                                renderTable();
+                            }
+                        } else if (pendingVerifyAction === "delete") {
+                            if (pendingVerifyData) {
+                                handleDeleteCredential(pendingVerifyData.site, pendingVerifyData.user);
+                            }
                         }
                         closeVerifyModal();
                     } else {
@@ -1054,7 +1174,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         <div id="verify-modal" class="modal-overlay hidden">
             <div class="glass-card modal-content">
                 <h3>Confirm Identity</h3>
-                <p class="subtitle" style="margin-bottom: 16px;">Please enter your master password to reveal this credential.</p>
+                <p id="verify-prompt" class="subtitle" style="margin-bottom: 16px;">Please enter your master password to reveal this credential.</p>
                 <div class="form-group">
                     <input type="password" id="verify-pass" placeholder="Enter master password..." onkeydown="if(event.key === 'Enter') submitVerifyModal()">
                 </div>
