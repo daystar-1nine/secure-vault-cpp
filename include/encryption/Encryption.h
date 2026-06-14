@@ -2,17 +2,15 @@
 #define ENCRYPTION_H
 
 #include <string>
+#include <vector>
+#include <optional>
+#include <cstdint>
 
 /*
     Encryption module for vault data.
-
-    Version 1:
-    - XOR-based encryption (learning purpose)
-
-    Design Goals:
-    - Symmetric encryption (same key for encrypt/decrypt)
-    - Safe storage (encoded output)
-    - Future upgrade ready (AES, ChaCha20)
+    - Uses ChaCha20-Poly1305 authenticated symmetric encryption (AEAD)
+    - Uses Argon2id key derivation to derive the 256-bit encryption key
+    - Appends a random salt and nonce to the ciphertext for safe storage
 */
 class Encryption
 {
@@ -23,25 +21,16 @@ public:
         const std::string& password
     ) const;
 
-    // 🔹 Decrypt cipher text
-    std::string decrypt(
+    // 🔹 Decrypt cipher text (returns std::nullopt if decryption/authentication fails)
+    std::optional<std::string> decrypt(
         const std::string& cipherText,
         const std::string& password
     ) const;
 
 private:
-    // 🔐 Core XOR logic
-    std::string xorCipher(
-        const std::string& data,
-        const std::string& key
-    ) const;
-
-    // 🔑 Derive key from password
-    std::string deriveKey(const std::string& password) const;
-
-    // 🔄 Encoding helpers (for safe storage)
-    std::string toHex(const std::string& input) const;
-    std::string fromHex(const std::string& input) const;
+    // 🔄 Hex helpers (renamed to take std::vector for modern usage)
+    std::string toHex(const std::vector<uint8_t>& data) const;
+    std::vector<uint8_t> fromHex(const std::string& hex) const;
 };
 
 #endif

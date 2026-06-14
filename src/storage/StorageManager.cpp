@@ -10,6 +10,8 @@ bool StorageManager::saveVault(
     const std::string& password
 )
 {
+    std::filesystem::create_directories("data");
+
     // Serialize all credentials
     std::string data = serializeAll(credentials);
 
@@ -45,10 +47,14 @@ std::optional<std::vector<Credential>> StorageManager::loadVault(
     file.close();
 
     // Decrypt data
-    std::string decrypted = encryption.decrypt(buffer.str(), password);
+    auto decrypted = encryption.decrypt(buffer.str(), password);
+    if (!decrypted)
+    {
+        return std::nullopt; // Decryption or validation failed
+    }
 
     // Deserialize
-    auto credentials = deserializeAll(decrypted);
+    auto credentials = deserializeAll(*decrypted);
 
     return credentials;
 }

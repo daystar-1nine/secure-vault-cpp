@@ -61,7 +61,16 @@ public:
     // 🔹 Clear sensitive data from memory
     void clearSensitiveData()
     {
-        password.clear();
+        if (!password.empty())
+        {
+            volatile char* p = const_cast<volatile char*>(password.data());
+            size_t size = password.size();
+            while (size--)
+            {
+                *p++ = 0;
+            }
+            password.clear();
+        }
     }
 };
 

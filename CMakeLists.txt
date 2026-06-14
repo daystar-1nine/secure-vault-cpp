@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(password_manager LANGUAGES CXX)
+project(password_manager LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,17 @@ if(NOT imgui_POPULATED)
     FetchContent_Populate(imgui)
 endif()
 
+# 3. Fetch Monocypher
+FetchContent_Declare(
+    monocypher
+    GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+    GIT_TAG 4.0.2
+)
+FetchContent_GetProperties(monocypher)
+if(NOT monocypher_POPULATED)
+    FetchContent_Populate(monocypher)
+endif()
+
 # Define ImGui source files (compiling them directly)
 set(IMGUI_DIR ${imgui_SOURCE_DIR})
 set(IMGUI_SOURCES
@@ -43,6 +54,12 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_opengl2.cpp
 )
 
+# Define Monocypher source files
+set(MONOCYPHER_DIR ${monocypher_SOURCE_DIR})
+set(MONOCYPHER_SOURCES
+    ${MONOCYPHER_DIR}/src/monocypher.c
+)
+
 # Project Source files list
 set(SOURCES
     src/main.cpp
@@ -51,6 +68,7 @@ set(SOURCES
     src/storage/StorageManager.cpp
     src/vault/VaultManager.cpp
     ${IMGUI_SOURCES}
+    ${MONOCYPHER_SOURCES}
 )
 
 # Define executable (use WIN32 to hide terminal window on Windows)
@@ -61,6 +79,7 @@ target_include_directories(password_manager PRIVATE
     include
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
+    ${MONOCYPHER_DIR}/src
 )
 
 # Link GLFW and system OpenGL libraries

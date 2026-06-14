@@ -2,14 +2,13 @@
 #define AUTH_MANAGER_H
 
 #include <string>
-#include <chrono>
+#include <vector>
+#include <cstdint>
 
 /*
     AuthManager handles:
-    - Vault password setup & verification
-    - Failed attempt tracking
-    - Lockout mechanism
-    - Recovery support (future extension)
+    - Vault password setup & verification using Argon2id
+    - Persistent failed attempt tracking and lockouts in config.dat
 */
 class AuthManager
 {
@@ -23,22 +22,19 @@ public:
     // 🔹 Verify vault password
     bool verifyVaultPassword(const std::string& password);
 
-    // 🔹 Reset attempt counter (on successful login)
-    void resetAttempts();
-
     // 🔹 Check if user is temporarily locked
     bool isLocked() const;
 
+    // 🔹 Get remaining lockout time in seconds
+    long long getLockoutRemainingTime() const;
+
 private:
-    // 🔐 Security helpers
-    std::string hashPassword(const std::string& password) const;
-    std::string generateSalt() const;
+    // 🔐 Persistent config helper
+    bool saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil) const;
 
-    // 🔒 Attempt tracking
-    int failedAttempts = 0;
-
-    // ⏳ Lock mechanism
-    std::chrono::system_clock::time_point lockUntil;
+    // 🔄 Hex helpers
+    std::string toHex(const std::vector<uint8_t>& data) const;
+    std::vector<uint8_t> fromHex(const std::string& hex) const;
 };
 
 #endif

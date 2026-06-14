@@ -30,6 +30,29 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+// 🔐 Secure Memory Wiper for char buffers
+static void secureWipe(char* buf, size_t size)
+{
+    volatile char* p = const_cast<volatile char*>(buf);
+    while (size--)
+    {
+        *p++ = 0;
+    }
+}
+
+// 🔐 Secure Memory Wiper for std::string
+static void secureWipeString(std::string& s)
+{
+    if (s.empty()) return;
+    volatile char* p = const_cast<volatile char*>(s.data());
+    size_t size = s.size();
+    while (size--)
+    {
+        *p++ = 0;
+    }
+    s.clear();
+}
+
 int main(int, char**)
 {
     // Initialize GLFW
@@ -154,6 +177,11 @@ int main(int, char**)
     std::string errorMessage = "";
     std::string successMessage = "";
 
+    // Status message timer state
+    double messageTimer = 0.0;
+    std::string prevSuccess = "";
+    std::string prevError = "";
+
     // Set to track visible passwords in the table (by site + "||" + user)
     std::set<std::string> visiblePasswords;
 
@@ -161,6 +189,25 @@ int main(int, char**)
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
+
+        // 🔹 Manage status message durations (5-second timeout)
+        if (successMessage != prevSuccess || errorMessage != prevError)
+        {
+            messageTimer = glfwGetTime();
+            prevSuccess = successMessage;
+            prevError = errorMessage;
+        }
+
+        if (!successMessage.empty() || !errorMessage.empty())
+        {
+            if (glfwGetTime() - messageTimer > 5.0)
+            {
+                successMessage = "";
+                errorMessage = "";
+                prevSuccess = "";
+                prevError = "";
+            }
+        }
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL2_NewFrame();
@@ -250,8 +297,8 @@ int main(int, char**)
                         viewState = VIEW_LOGIN;
                         errorMessage = "";
                         successMessage = "Vault created successfully! Please login.";
-                        memset(setupPass1, 0, sizeof(setupPass1));
-                        memset(setupPass2, 0, sizeof(setupPass2));
+                        secureWipe(setupPass1, sizeof(setupPass1));
+                        secureWipe(setupPass2, sizeof(setupPass2));
                     }
                     else
                     {
@@ -279,7 +326,7 @@ int main(int, char**)
 
             ImGui::SetCursorPos(ImVec2(((float)display_w - card_w) * 0.5f, ((float)display_h - card_h) * 0.5f));
             
-            // Draw card as a flat borderless child window
+            // Draw card as a flat child window
             ImGui::BeginChild("LoginCard", ImVec2(card_w, card_h), true, ImGuiWindowFlags_None);
 
             ImGui::Spacing();
@@ -296,7 +343,8 @@ int main(int, char**)
             if (authManager.isLocked())
             {
                 ImGui::TextColored(ImVec4(0.90f, 0.35f, 0.35f, 1.0f), "Too many failed attempts. Lockout active.");
-                ImGui::Text("Please wait a few seconds and try again.");
+                long long remainingTime = authManager.getLockoutRemainingTime();
+                ImGui::Text("Please wait %lld seconds and try again.", remainingTime);
             }
             else
             {
@@ -326,7 +374,7 @@ int main(int, char**)
                             }
                         }
                         viewState = VIEW_DASHBOARD;
-                        memset(loginPass, 0, sizeof(loginPass));
+                        secureWipe(loginPass, sizeof(loginPass));
                     }
                     else
                     {
@@ -357,10 +405,10 @@ int main(int, char**)
             ImGui::SameLine(ImGui::GetContentRegionMax().x - lock_btn_width - style.WindowPadding.x);
             if (ImGui::Button("Lock Vault", ImVec2(0.0f, 26.0f)))
             {
-                // Auto save
+                // Auto save, wipe keys, lock
                 storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
                 vaultManager.clearVault();
-                masterPassword = "";
+                secureWipeString(masterPassword);
                 viewState = VIEW_LOGIN;
                 successMessage = "Vault saved and locked successfully.";
                 errorMessage = "";
@@ -552,10 +600,10 @@ int main(int, char**)
                         successMessage = "Credential added & vault saved!";
                         errorMessage = "";
                         
-                        // Clear add buffers
+                        // Clear add buffers securely
                         memset(addSite, 0, sizeof(addSite));
                         memset(addUser, 0, sizeof(addUser));
-                        memset(addPass, 0, sizeof(addPass));
+                        secureWipe(addPass, sizeof(addPass));
                     }
                     else
                     {
