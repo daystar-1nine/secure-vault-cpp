@@ -7,6 +7,37 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <vector>
+#include <algorithm>
+
+// 🚨 Secure file wiper
+static void secureWipeFile(const std::filesystem::path& path)
+{
+    if (!std::filesystem::exists(path)) return;
+    try
+    {
+        uintmax_t size = std::filesystem::file_size(path);
+        std::ofstream file(path, std::ios::binary | std::ios::in | std::ios::out);
+        if (file)
+        {
+            std::vector<char> buffer(65536, 0);
+            uintmax_t bytesWritten = 0;
+            while (bytesWritten < size)
+            {
+                uintmax_t chunk = std::min(size - bytesWritten, static_cast<uintmax_t>(buffer.size()));
+                file.write(buffer.data(), chunk);
+                bytesWritten += chunk;
+            }
+            file.flush();
+            file.close();
+        }
+        std::filesystem::remove(path);
+    }
+    catch (...)
+    {
+        std::filesystem::remove(path);
+    }
+}
 
 // 🔹 Check if config file exists
 bool AuthManager::vaultExists() const
@@ -143,12 +174,31 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
     currentFailedAttempts++;
     long long lockUntilTimestamp = 0;
     
+    if (currentFailedAttempts >= 10)
+    {
+        // 🚨 TRIGGER PANIC SELF-DESTRUCT 🚨
+        secureWipeFile("data/config.dat");
+        secureWipeFile("data/vault.dat");
+        if (std::filesystem::exists("data/backups"))
+        {
+            try {
+                for (const auto& entry : std::filesystem::directory_iterator("data/backups"))
+                {
+                    if (entry.is_regular_file())
+                    {
+                        secureWipeFile(entry.path());
+                    }
+                }
+            } catch (...) {}
+        }
+        return false;
+    }
+
     if (currentFailedAttempts >= 3)
     {
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         int lockSeconds = 10;
         if (currentFailedAttempts >= 6) lockSeconds = 30;
-        if (currentFailedAttempts >= 10) lockSeconds = 60;
         lockUntilTimestamp = now + lockSeconds;
     }
 

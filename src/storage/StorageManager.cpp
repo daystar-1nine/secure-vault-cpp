@@ -3,8 +3,10 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <chrono>
+#include <algorithm>
 
-// 🔹 Save vault with atomic write
+// 🔹 Save vault with atomic write and automatic backups
 bool StorageManager::saveVault(
     const std::vector<Credential>& credentials,
     const std::string& password
@@ -25,6 +27,42 @@ bool StorageManager::saveVault(
 
     tempFile << encryptedData;
     tempFile.close();
+
+    // 📂 Back up the current vault file if it exists before overwriting
+    if (std::filesystem::exists(VAULT_FILE))
+    {
+        try
+        {
+            std::filesystem::create_directories("data/backups");
+            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::string backupPath = "data/backups/vault_" + std::to_string(now) + ".dat";
+            std::filesystem::copy_file(VAULT_FILE, backupPath, std::filesystem::copy_options::overwrite_existing);
+
+            // Rotate backups (keep only latest 5)
+            std::vector<std::filesystem::path> backups;
+            for (const auto& entry : std::filesystem::directory_iterator("data/backups"))
+            {
+                if (entry.is_regular_file() && entry.path().extension() == ".dat")
+                {
+                    backups.push_back(entry.path());
+                }
+            }
+
+            if (backups.size() > 5)
+            {
+                // Sort by last write time
+                std::sort(backups.begin(), backups.end(), [](const auto& a, const auto& b) {
+                    return std::filesystem::last_write_time(a) < std::filesystem::last_write_time(b);
+                });
+                // Remove oldest backups
+                for (size_t i = 0; i < backups.size() - 5; ++i)
+                {
+                    std::filesystem::remove(backups[i]);
+                }
+            }
+        }
+        catch (...) {}
+    }
 
     // Replace original file (atomic)
     std::filesystem::rename(TEMP_FILE, VAULT_FILE);

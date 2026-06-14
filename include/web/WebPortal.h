@@ -461,6 +461,92 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             padding: 24px !important;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5) !important;
         }
+
+        /* 📋 Clipboard Progress Bar */
+        .clipboard-bar-container {
+            width: 100%;
+            max-width: 1200px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        .clipboard-bar-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-violet));
+            transition: width 0.1s linear;
+        }
+
+        /* 🔎 Credential row hover cursor */
+        #credentials-table tbody tr {
+            cursor: pointer;
+        }
+
+        #credentials-table tbody tr td:last-child {
+            cursor: default; /* actions cell shouldn't show row pointer */
+        }
+
+        /* 🛡️ TOTP progress indicator */
+        .totp-progress-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .totp-progress-bar {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .totp-progress-fill {
+            height: 100%;
+            width: 100%;
+            background: var(--success-green);
+            transition: width 1s linear, background-color 0.5s;
+        }
+
+        /* 📝 Textarea for notes */
+        textarea {
+            background: rgba(15, 15, 20, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 1em;
+            width: 100%;
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+            background: rgba(15, 15, 20, 0.8);
+        }
+
+        /* 📎 Attachment file tag */
+        .file-tag {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: #93c5fd;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.85em;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
@@ -494,13 +580,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 <button type="submit" class="btn btn-primary">Initialize Vault</button>
             </form>
 
-            <div class="settings-section">
-                <div class="settings-title">Display Settings</div>
-                <div class="scale-slider-container">
-                    <input type="range" min="0.8" max="1.8" step="0.1" value="1.0" class="scale-slider" oninput="changeScale(this.value)">
-                    <span class="scale-label">1.0x</span>
-                </div>
-            </div>
+
         </div>
 
         <!-- 🔒 Login Card -->
@@ -522,13 +602,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 <button type="submit" id="unlock-btn" class="btn btn-primary">Unlock Database</button>
             </form>
 
-            <div class="settings-section">
-                <div class="settings-title">Display Settings</div>
-                <div class="scale-slider-container">
-                    <input type="range" min="0.8" max="1.8" step="0.1" value="1.0" class="scale-slider" oninput="changeScale(this.value)">
-                    <span class="scale-label">1.0x</span>
-                </div>
-            </div>
+
         </div>
 
         <!-- 💻 Dashboard Workspace -->
@@ -536,13 +610,20 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             
             <header class="dashboard-header">
                 <h2>SECURE <span class="title-accent">PASSWORD VAULT</span></h2>
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="nav-vault-btn" onclick="switchTab('vault')" class="btn btn-secondary" style="background: rgba(59, 130, 246, 0.2); border-color: var(--accent-blue);">Vault</button>
+                    <button id="nav-audit-btn" onclick="switchTab('audit')" class="btn btn-secondary">Security Audit</button>
                     <button onclick="handleLock()" class="btn btn-secondary">Lock Vault</button>
                     <button onclick="handleShutdown()" class="btn btn-danger" style="font-size: 0.9em; padding: 8px 16px;">Exit App</button>
                 </div>
             </header>
 
-            <div class="dashboard-layout">
+            <!-- 📋 Clipboard Progress Bar -->
+            <div id="clipboard-progress-container" class="clipboard-bar-container">
+                <div id="clipboard-progress-bar" class="clipboard-bar-fill"></div>
+            </div>
+
+            <div id="tab-vault" class="dashboard-layout">
                 
                 <!-- Left Pane: Credentials table -->
                 <main class="left-pane">
@@ -561,7 +642,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                                     <th>Website</th>
                                     <th>Username / Email</th>
                                     <th>Password</th>
-                                    <th style="text-align: right; width: 160px;">Actions</th>
+                                    <th style="text-align: right; width: 190px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="table-body">
@@ -588,6 +669,22 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                         <div class="form-group">
                             <label for="add-pass">Password</label>
                             <input type="password" id="add-pass" required placeholder="Type password...">
+                        </div>
+                        <div class="form-group">
+                            <label for="add-totp">TOTP Secret (2FA Key) - Optional</label>
+                            <input type="text" id="add-totp" placeholder="e.g. JBSWY3DPEHPK3PXP">
+                        </div>
+                        <div class="form-group">
+                            <label for="add-notes">Secure Notes - Optional</label>
+                            <textarea id="add-notes" placeholder="e.g. Recovery keys, pin codes, security questions..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>File Attachment - Optional (Max 2MB)</label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button type="button" onclick="attachFile()" class="btn btn-secondary" style="font-size: 0.85em; padding: 8px 12px; margin: 0; width: auto;">Select File...</button>
+                                <span id="attached-file-info" style="font-size: 0.85em; color: var(--text-secondary);">No file attached</span>
+                                <button type="button" id="btn-clear-attachment" onclick="clearAttachment()" class="table-btn table-btn-danger hidden" style="min-width: auto; height: 32px;">Clear</button>
+                            </div>
                         </div>
 
                         <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add Record</button>
@@ -621,14 +718,80 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     </div>
 
                     <div class="settings-section">
-                        <div class="settings-title">Display Settings</div>
-                        <div class="scale-slider-container">
-                            <input type="range" min="0.8" max="1.8" step="0.1" value="1.0" class="scale-slider" oninput="changeScale(this.value)">
-                            <span class="scale-label">1.0x</span>
+                        <div class="settings-title">Backup & Portability</div>
+                        <div style="display: flex; gap: 10px; margin-top: 8px;">
+                            <button onclick="importCSV()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Import CSV</button>
+                            <button onclick="openExportModal()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Export CSV</button>
                         </div>
                     </div>
+
+
                 </aside>
 
+            </div>
+
+            <div id="tab-audit" class="dashboard-layout hidden">
+                <main class="left-pane" style="grid-column: 1 / -1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3>Security Audit Dashboard</h3>
+                        <p class="subtitle" style="margin: 0;">Audit and fix weak or reused credentials completely offline.</p>
+                    </div>
+                    
+                    <!-- Stats Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                        <div class="glass-card" style="padding: 20px; text-align: left; max-width: none;">
+                            <div style="font-size: 0.85em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">Total Passwords</div>
+                            <div id="audit-total-count" style="font-size: 2.2em; font-weight: 700; margin-top: 8px; color: var(--text-primary);">0</div>
+                        </div>
+                        <div class="glass-card" style="padding: 20px; text-align: left; max-width: none; border-color: rgba(239, 68, 68, 0.25);">
+                            <div style="font-size: 0.85em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">Weak Passwords</div>
+                            <div id="audit-weak-count" style="font-size: 2.2em; font-weight: 700; margin-top: 8px; color: #fca5a5;">0</div>
+                            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 4px;">Length &lt; 12 characters</div>
+                        </div>
+                        <div class="glass-card" style="padding: 20px; text-align: left; max-width: none; border-color: rgba(245, 158, 11, 0.25);">
+                            <div style="font-size: 0.85em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">Reused Passwords</div>
+                            <div id="audit-reused-count" style="font-size: 2.2em; font-weight: 700; margin-top: 8px; color: #fde047;">0</div>
+                            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 4px;">Shared across multiple sites</div>
+                        </div>
+                    </div>
+
+                    <!-- Weak/Reused lists -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <h4 style="margin-bottom: 12px; color: #fca5a5;">Weak Credentials</h4>
+                            <div class="table-wrapper" style="max-height: 300px;">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Website</th>
+                                            <th>Username</th>
+                                            <th>Length</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="audit-weak-list">
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 style="margin-bottom: 12px; color: #fde047;">Reused Credentials</h4>
+                            <div class="table-wrapper" style="max-height: 300px;">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Password (Truncated)</th>
+                                            <th>Sites / Users Reusing It</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="audit-reused-list">
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </main>
             </div>
 
         </div>
@@ -645,6 +808,13 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         let clipboardTimer = null;
         let inactivityTimer = null;
         const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes auto-lock timeout
+
+        // Premium variables
+        let clipboardPass = "";
+        let clipboardProgressInterval = null;
+        let currentAttachedFile = { name: "", data: "" };
+        let totpTimer = null;
+        let systemIdleInterval = null;
 
         // 🔹 Password strength checker (12-char strict complexity rules)
         function checkMasterPasswordStrength(pass) {
@@ -727,56 +897,102 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             window.addEventListener(event, resetInactivityTimer);
         });
 
-        // 🔹 Clipboard safe copy
+        // 🔹 Clipboard safe copy with visual progress bar and conditional clear
         function copyPassword(text) {
             navigator.clipboard.writeText(text)
                 .then(() => {
+                    clipboardPass = text;
                     showAlert("Password copied to clipboard! (Auto-clears in 20s)", true);
+                    
+                    const container = document.getElementById("clipboard-progress-container");
+                    const fill = document.getElementById("clipboard-progress-bar");
+                    container.style.display = "block";
+                    fill.style.width = "100%";
+
                     if (clipboardTimer) clearTimeout(clipboardTimer);
-                    clipboardTimer = setTimeout(() => {
-                        navigator.clipboard.writeText("");
-                        const dashboard = document.getElementById("dashboard-view");
-                        if (dashboard && !dashboard.classList.contains("hidden")) {
-                            showAlert("Clipboard cleared for security.", true);
+                    if (clipboardProgressInterval) clearInterval(clipboardProgressInterval);
+
+                    let secondsLeft = 20;
+                    clipboardProgressInterval = setInterval(() => {
+                        secondsLeft -= 0.1;
+                        if (secondsLeft <= 0) {
+                            clearInterval(clipboardProgressInterval);
+                            container.style.display = "none";
+                        } else {
+                            fill.style.width = (secondsLeft / 20) * 100 + "%";
                         }
+                    }, 100);
+
+                    clipboardTimer = setTimeout(() => {
+                        window.api_clear_clipboard_if_matching(clipboardPass)
+                            .then(data => {
+                                if (data.success) {
+                                    showAlert("Clipboard cleared for security.", true);
+                                }
+                            });
+                        clipboardPass = "";
                     }, 20000);
                 })
                 .catch(() => showAlert("Failed to copy password."));
         }
 
+        function startTotpPoller() {
+            if (totpTimer) clearInterval(totpTimer);
+            totpTimer = setInterval(() => {
+                const dashboard = document.getElementById("dashboard-view");
+                if (dashboard && !dashboard.classList.contains("hidden")) {
+                    window.api_get_credentials()
+                        .then(data => {
+                            credentials = data.credentials || [];
+                            const detailsModal = document.getElementById("details-modal");
+                            if (detailsModal && !detailsModal.classList.contains("hidden")) {
+                                const openSite = document.getElementById("details-site").value;
+                                const openUser = document.getElementById("details-user").value;
+                                const cred = credentials.find(c => c.website === openSite && c.username === openUser);
+                                if (cred && cred.totp) {
+                                    document.getElementById("details-totp-code").value = cred.totp;
+                                    document.getElementById("totp-countdown-val").textContent = cred.totp_remaining;
+                                    const percentage = (cred.totp_remaining / 30) * 100;
+                                    const progressFill = document.getElementById("totp-progress-bar-fill");
+                                    if (progressFill) {
+                                        progressFill.style.width = percentage + "%";
+                                        if (cred.totp_remaining <= 5) {
+                                            progressFill.style.backgroundColor = "var(--accent-red)";
+                                        } else {
+                                            progressFill.style.backgroundColor = "var(--success-green)";
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                        .catch(() => {});
+                }
+            }, 1000);
+        }
+
+        function startSystemIdlePoller() {
+            if (systemIdleInterval) clearInterval(systemIdleInterval);
+            systemIdleInterval = setInterval(() => {
+                const dashboard = document.getElementById("dashboard-view");
+                if (dashboard && !dashboard.classList.contains("hidden")) {
+                    window.api_get_system_idle_time()
+                        .then(data => {
+                            if (data.idleMs && data.idleMs >= 2 * 60 * 1000) { // 2 minutes system idle
+                                handleLock();
+                                showAlert("Vault locked automatically due to system inactivity.");
+                            }
+                        })
+                        .catch(() => {});
+                }
+            }, 5000);
+        }
+
         // On Page Load
         window.addEventListener("DOMContentLoaded", () => {
-            fetchSettings();
             checkVaultStatus();
+            startTotpPoller();
+            startSystemIdlePoller();
         });
-
-        // 🔹 Scale changes
-        function changeScale(val) {
-            scale = parseFloat(val);
-            document.documentElement.style.setProperty('--app-scale', scale);
-            
-            // Sync all sliders
-            document.querySelectorAll(".scale-slider").forEach(slider => {
-                slider.value = scale;
-            });
-            document.querySelectorAll(".scale-label").forEach(label => {
-                label.textContent = scale.toFixed(1) + "x";
-            });
-
-            // Persist settings on server
-            window.api_save_settings(scale)
-                .catch(err => console.error("Failed to save scale setting", err));
-        }
-
-        function fetchSettings() {
-            window.api_get_settings()
-                .then(data => {
-                    if (data && data.scale) {
-                        changeScale(data.scale);
-                    }
-                })
-                .catch(err => console.error("Error loading settings", err));
-        }
 
         // 🔹 Alert Banner Helpers
         function showAlert(msg, isSuccess = false) {
@@ -900,8 +1116,12 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     showAlert("Vault unlocked successfully.", true);
                     loadDashboard();
                 } else {
-                    showAlert(data.error || "Invalid password.");
-                    checkVaultStatus(); // Updates lockout status if triggered
+                    if (data.destructed) {
+                        showAlert(data.error || "Vault has been permanently self-destructed due to 10 consecutive failed attempts!");
+                    } else {
+                        showAlert(data.error || "Invalid password.");
+                    }
+                    checkVaultStatus(); // Updates lockout status or shows setup view if self-destructed
                 }
             })
             .catch(() => showAlert("API request failed."));
@@ -942,6 +1162,10 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 }
 
                 const row = document.createElement("tr");
+                row.onclick = (e) => {
+                    if (tdActions.contains(e.target)) return;
+                    openDetailsModal(c);
+                };
 
                 // Cell: Website
                 const tdSite = document.createElement("td");
@@ -976,16 +1200,31 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 const btnCopy = document.createElement("button");
                 btnCopy.className = "table-btn";
                 btnCopy.textContent = "Copy";
-                btnCopy.onclick = () => {
+                btnCopy.onclick = (e) => {
+                    e.stopPropagation();
                     copyPassword(c.password);
                 };
                 tdActions.appendChild(btnCopy);
+
+                // History Button
+                if (c.history && c.history.length > 0) {
+                    const btnHistory = document.createElement("button");
+                    btnHistory.className = "table-btn";
+                    btnHistory.innerHTML = "🕒";
+                    btnHistory.title = "View Password History";
+                    btnHistory.onclick = (e) => {
+                        e.stopPropagation();
+                        openHistoryModal(c.website, c.username, c.history);
+                    };
+                    tdActions.appendChild(btnHistory);
+                }
 
                 // Show/Hide Toggle
                 const btnToggle = document.createElement("button");
                 btnToggle.className = "table-btn";
                 btnToggle.textContent = isVisible ? "Hide" : "Show";
-                btnToggle.onclick = () => {
+                btnToggle.onclick = (e) => {
+                    e.stopPropagation();
                     if (isVisible) {
                         visiblePasswords.delete(key);
                         renderTable();
@@ -999,7 +1238,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 const btnDelete = document.createElement("button");
                 btnDelete.className = "table-btn table-btn-danger";
                 btnDelete.textContent = "Delete";
-                btnDelete.onclick = () => {
+                btnDelete.onclick = (e) => {
+                    e.stopPropagation();
                     openVerifyModal("delete", { site: c.website, user: c.username });
                 };
                 tdActions.appendChild(btnDelete);
@@ -1009,19 +1249,55 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             });
         }
 
+        // 🔹 File Attachment Management for Add Form
+        function attachFile() {
+            window.api_attach_file()
+                .then(data => {
+                    if (data.success) {
+                        currentAttachedFile.name = data.fileName;
+                        currentAttachedFile.data = data.fileData;
+                        
+                        const info = document.getElementById("attached-file-info");
+                        info.textContent = data.fileName;
+                        info.style.color = "var(--text-primary)";
+                        document.getElementById("btn-clear-attachment").classList.remove("hidden");
+                        showAlert("File attached successfully!", true);
+                    } else if (data.error && data.error !== "Cancelled") {
+                        showAlert(`Failed to attach file: ${data.error}`);
+                    }
+                })
+                .catch(() => showAlert("Attach file request failed."));
+        }
+
+        function clearAttachment() {
+            currentAttachedFile.name = "";
+            currentAttachedFile.data = "";
+            const info = document.getElementById("attached-file-info");
+            info.textContent = "No file attached";
+            info.style.color = "var(--text-secondary)";
+            document.getElementById("btn-clear-attachment").classList.add("hidden");
+        }
+
         // 🔹 Add new credential
         function handleAddCredential(e) {
             e.preventDefault();
             const site = document.getElementById("add-site").value;
             const user = document.getElementById("add-user").value;
             const pass = document.getElementById("add-pass").value;
+            const totp = document.getElementById("add-totp").value || "";
+            const notes = document.getElementById("add-notes").value || "";
+            const attName = currentAttachedFile.name || "";
+            const attData = currentAttachedFile.data || "";
 
-            window.api_add_credential(site, user, pass)
+            window.api_add_credential(site, user, pass, totp, notes, attName, attData)
             .then(data => {
                 // Secure wipe inputs
                 document.getElementById("add-site").value = "";
                 document.getElementById("add-user").value = "";
                 document.getElementById("add-pass").value = "";
+                document.getElementById("add-totp").value = "";
+                document.getElementById("add-notes").value = "";
+                clearAttachment();
 
                 if (data.success) {
                     showAlert("Credential added and vault saved!", true);
@@ -1084,6 +1360,155 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 .catch(() => showAlert("API request failed."));
         }
 
+        // 🔹 Credential Details Inspector Modal Handlers
+        function openDetailsModal(c) {
+            document.getElementById("details-site").value = c.website;
+            document.getElementById("details-user").value = c.username;
+            document.getElementById("details-pass").value = c.password;
+            
+            // Password show/hide toggle state reset
+            const passInput = document.getElementById("details-pass");
+            passInput.type = "password";
+            document.getElementById("btn-details-show-pass").textContent = "Show";
+
+            // TOTP Section
+            const totpContainer = document.getElementById("details-totp-container");
+            if (c.totp_secret && c.totp_secret.trim() !== "") {
+                totpContainer.classList.remove("hidden");
+                document.getElementById("details-totp-code").value = c.totp || "";
+                document.getElementById("totp-countdown-val").textContent = c.totp_remaining || "30";
+                
+                const percentage = ((c.totp_remaining || 30) / 30) * 100;
+                const progressFill = document.getElementById("totp-progress-bar-fill");
+                if (progressFill) {
+                    progressFill.style.width = percentage + "%";
+                    if (c.totp_remaining <= 5) {
+                        progressFill.style.backgroundColor = "var(--accent-red)";
+                    } else {
+                        progressFill.style.backgroundColor = "var(--success-green)";
+                    }
+                }
+            } else {
+                totpContainer.classList.add("hidden");
+            }
+
+            // Notes Section
+            document.getElementById("details-notes").value = c.notes || "";
+
+            // File Attachment Section
+            const attachmentContainer = document.getElementById("details-attachment-container");
+            if (c.attachmentName && c.attachmentName.trim() !== "") {
+                attachmentContainer.classList.remove("hidden");
+                document.getElementById("details-attachment-name").textContent = c.attachmentName;
+                document.getElementById("details-attachment-name").title = c.attachmentName;
+            } else {
+                attachmentContainer.classList.add("hidden");
+            }
+
+            // Password History Section (within Details modal)
+            const historyContainer = document.getElementById("details-history-container");
+            const historyBody = document.getElementById("details-history-body");
+            historyBody.innerHTML = "";
+            if (c.history && c.history.length > 0) {
+                historyContainer.classList.remove("hidden");
+                c.history.forEach((oldPass, idx) => {
+                    const hRow = document.createElement("tr");
+
+                    const tdHPass = document.createElement("td");
+                    tdHPass.textContent = "••••••••";
+                    tdHPass.className = "cell-mono";
+                    
+                    const tdHAction = document.createElement("td");
+                    tdHAction.style.textAlign = "right";
+
+                    const btnHCopy = document.createElement("button");
+                    btnHCopy.className = "table-btn";
+                    btnHCopy.textContent = "Copy";
+                    btnHCopy.onclick = (e) => {
+                        e.stopPropagation();
+                        copyPassword(oldPass);
+                    };
+                    tdHAction.appendChild(btnHCopy);
+
+                    const btnHShow = document.createElement("button");
+                    btnHShow.className = "table-btn";
+                    btnHShow.textContent = "Show";
+                    btnHShow.style.marginLeft = "6px";
+                    btnHShow.onclick = (e) => {
+                        e.stopPropagation();
+                        if (btnHShow.textContent === "Show") {
+                            tdHPass.textContent = oldPass;
+                            tdHPass.style.fontFamily = "inherit";
+                            tdHPass.style.letterSpacing = "normal";
+                            btnHShow.textContent = "Hide";
+                        } else {
+                            tdHPass.textContent = "••••••••";
+                            tdHPass.className = "cell-mono";
+                            tdHPass.style.fontFamily = "'Courier New', Courier, monospace";
+                            tdHPass.style.letterSpacing = "0.08em";
+                            btnHShow.textContent = "Show";
+                        }
+                    };
+                    tdHAction.appendChild(btnHShow);
+
+                    hRow.appendChild(tdHPass);
+                    hRow.appendChild(tdHAction);
+                    historyBody.appendChild(hRow);
+                });
+            } else {
+                historyContainer.classList.add("hidden");
+            }
+
+            document.getElementById("details-modal").classList.remove("hidden");
+        }
+
+        function closeDetailsModal() {
+            document.getElementById("details-modal").classList.add("hidden");
+        }
+
+        function toggleDetailsPassword() {
+            const passInput = document.getElementById("details-pass");
+            const btn = document.getElementById("btn-details-show-pass");
+            if (passInput.type === "password") {
+                passInput.type = "text";
+                btn.textContent = "Hide";
+            } else {
+                passInput.type = "password";
+                btn.textContent = "Show";
+            }
+        }
+
+        function copyDetailsPassword() {
+            const val = document.getElementById("details-pass").value;
+            if (val) copyPassword(val);
+        }
+
+        function copyDetailsTotp() {
+            const val = document.getElementById("details-totp-code").value;
+            if (val) {
+                navigator.clipboard.writeText(val)
+                    .then(() => showAlert("TOTP code copied to clipboard!", true))
+                    .catch(() => showAlert("Failed to copy TOTP code."));
+            }
+        }
+
+        function downloadAttachment() {
+            const site = document.getElementById("details-site").value;
+            const user = document.getElementById("details-user").value;
+            const cred = credentials.find(c => c.website === site && c.username === user);
+            if (cred && cred.attachmentName && cred.attachmentData) {
+                window.api_download_file(cred.attachmentName, cred.attachmentData)
+                    .then(data => {
+                        if (data.success) {
+                            showAlert(`File downloaded successfully to ${data.path}`, true);
+                        } else if (data.error && data.error !== "Cancelled") {
+                            showAlert(`Download failed: ${data.error}`);
+                        }
+                    })
+                    .catch(() => showAlert("Download request failed."));
+            }
+        }
+
         // 🔹 Verification Modal handlers
         let pendingVerifyAction = null;
         let pendingVerifyData = null;
@@ -1096,6 +1521,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             const prompt = document.getElementById("verify-prompt");
             if (action === "delete") {
                 prompt.textContent = `Please enter your master password to confirm deleting credentials for "${data.site}".`;
+            } else if (action === "export") {
+                prompt.textContent = "Please enter your master password to authorize exporting the database to CSV.";
             } else {
                 prompt.textContent = "Please enter your master password to reveal this credential.";
             }
@@ -1128,6 +1555,10 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                             if (pendingVerifyData) {
                                 handleDeleteCredential(pendingVerifyData.site, pendingVerifyData.user);
                             }
+                        } else if (pendingVerifyAction === "export") {
+                            closeVerifyModal();
+                            exportCSV(pass);
+                            return;
                         }
                         closeVerifyModal();
                     } else {
@@ -1143,12 +1574,20 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 .catch(() => showAlert("Verification failed."));
         }
 
-        // Handle Escape key to close modal
+        // Handle Escape key to close modals
         window.addEventListener("keydown", (e) => {
             if (e.key === "Escape") {
                 const modal = document.getElementById("verify-modal");
                 if (modal && !modal.classList.contains("hidden")) {
                     closeVerifyModal();
+                }
+                const histModal = document.getElementById("history-modal");
+                if (histModal && !histModal.classList.contains("hidden")) {
+                    closeHistoryModal();
+                }
+                const detModal = document.getElementById("details-modal");
+                if (detModal && !detModal.classList.contains("hidden")) {
+                    closeDetailsModal();
                 }
             }
         });
@@ -1168,7 +1607,204 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     .catch(() => showAlert("Failed to close application."));
             }
         }
+
+        // 🔹 Switch between tabs (Vault and Security Audit)
+        function switchTab(tab) {
+            const vaultTab = document.getElementById("tab-vault");
+            const auditTab = document.getElementById("tab-audit");
+            const vaultBtn = document.getElementById("nav-vault-btn");
+            const auditBtn = document.getElementById("nav-audit-btn");
+
+            if (tab === "vault") {
+                vaultTab.classList.remove("hidden");
+                auditTab.classList.add("hidden");
+                
+                // Highlight active button
+                vaultBtn.style.background = "rgba(59, 130, 246, 0.2)";
+                vaultBtn.style.borderColor = "var(--accent-blue)";
+                auditBtn.style.background = "rgba(255, 255, 255, 0.06)";
+                auditBtn.style.borderColor = "var(--card-border)";
+            } else if (tab === "audit") {
+                vaultTab.classList.add("hidden");
+                auditTab.classList.remove("hidden");
+
+                auditBtn.style.background = "rgba(59, 130, 246, 0.2)";
+                auditBtn.style.borderColor = "var(--accent-blue)";
+                vaultBtn.style.background = "rgba(255, 255, 255, 0.06)";
+                vaultBtn.style.borderColor = "var(--card-border)";
+
+                runSecurityAudit();
+            }
+        }
+
+        // 🔹 Run client-side completely offline security audit
+        function runSecurityAudit() {
+            const weakList = document.getElementById("audit-weak-list");
+            const reusedList = document.getElementById("audit-reused-list");
+            weakList.innerHTML = "";
+            reusedList.innerHTML = "";
+
+            let weakCount = 0;
+            let reusedMap = new Map();
+
+            credentials.forEach(c => {
+                // Weak if length < 12
+                if (c.password.length < 12) {
+                    weakCount++;
+                    const row = document.createElement("tr");
+                    const tdSite = document.createElement("td");
+                    tdSite.textContent = c.website;
+                    const tdUser = document.createElement("td");
+                    tdUser.textContent = c.username;
+                    const tdLen = document.createElement("td");
+                    tdLen.textContent = `${c.password.length} chars`;
+                    tdLen.style.color = "var(--accent-red)";
+                    row.appendChild(tdSite);
+                    row.appendChild(tdUser);
+                    row.appendChild(tdLen);
+                    weakList.appendChild(row);
+                }
+
+                if (!reusedMap.has(c.password)) {
+                    reusedMap.set(c.password, []);
+                }
+                reusedMap.get(c.password).push(c);
+            });
+
+            let reusedCount = 0;
+            reusedMap.forEach((users, pass) => {
+                if (users.length > 1) {
+                    reusedCount += users.length;
+                    const row = document.createElement("tr");
+                    const tdPass = document.createElement("td");
+                    tdPass.textContent = pass.substring(0, 3) + "••••";
+                    tdPass.className = "cell-mono";
+
+                    const tdDetails = document.createElement("td");
+                    const detailsStr = users.map(u => `"${u.website}" (${u.username})`).join(", ");
+                    tdDetails.textContent = detailsStr;
+                    tdDetails.style.fontSize = "0.9em";
+                    tdDetails.style.color = "var(--text-secondary)";
+
+                    row.appendChild(tdPass);
+                    row.appendChild(tdDetails);
+                    reusedList.appendChild(row);
+                }
+            });
+
+            document.getElementById("audit-total-count").textContent = credentials.length;
+            document.getElementById("audit-weak-count").textContent = weakCount;
+            document.getElementById("audit-reused-count").textContent = reusedCount;
+        }
+
+        // 🔹 CSV Backup functions
+        function openExportModal() {
+            openVerifyModal("export", null);
+        }
+
+        function exportCSV(pass) {
+            window.api_export_csv(pass)
+                .then(data => {
+                    if (data.success) {
+                        showAlert(`Vault successfully exported to ${data.path}`, true);
+                    } else {
+                        showAlert(data.error || "Export failed.");
+                    }
+                })
+                .catch(() => showAlert("Export failed."));
+        }
+
+        function importCSV() {
+            window.api_import_csv()
+                .then(data => {
+                    if (data.success) {
+                        showAlert(`Successfully imported ${data.imported} credentials!`, true);
+                        fetchCredentials();
+                    } else {
+                        showAlert(data.error || "Import failed.");
+                    }
+                })
+                .catch(() => showAlert("Import failed."));
+        }
+
+        // 🔹 Password History modal functions
+        function openHistoryModal(site, user, historyList) {
+            document.getElementById("history-prompt").textContent = `Historical passwords for "${site}" (${user})`;
+            const tbody = document.getElementById("history-table-body");
+            tbody.innerHTML = "";
+
+            historyList.forEach((oldPass, idx) => {
+                const row = document.createElement("tr");
+
+                const tdPass = document.createElement("td");
+                tdPass.textContent = "••••••••";
+                tdPass.className = "cell-mono";
+                
+                const tdAction = document.createElement("td");
+                tdAction.style.textAlign = "right";
+
+                const btnCopy = document.createElement("button");
+                btnCopy.className = "table-btn";
+                btnCopy.textContent = "Copy";
+                btnCopy.onclick = () => {
+                    copyPassword(oldPass);
+                };
+                tdAction.appendChild(btnCopy);
+
+                const btnShow = document.createElement("button");
+                btnShow.className = "table-btn";
+                btnShow.textContent = "Show";
+                btnShow.style.marginLeft = "6px";
+                btnShow.onclick = () => {
+                    if (btnShow.textContent === "Show") {
+                        tdPass.textContent = oldPass;
+                        tdPass.style.fontFamily = "inherit";
+                        tdPass.style.letterSpacing = "normal";
+                        btnShow.textContent = "Hide";
+                    } else {
+                        tdPass.textContent = "••••••••";
+                        tdPass.className = "cell-mono";
+                        tdPass.style.fontFamily = "'Courier New', Courier, monospace";
+                        tdPass.style.letterSpacing = "0.08em";
+                        btnShow.textContent = "Show";
+                    }
+                };
+                tdAction.appendChild(btnShow);
+
+                row.appendChild(tdPass);
+                row.appendChild(tdAction);
+                tbody.appendChild(row);
+            });
+
+            document.getElementById("history-modal").classList.remove("hidden");
+        }
+
+        function closeHistoryModal() {
+            document.getElementById("history-modal").classList.add("hidden");
+        }
     </script>
+
+        <!-- 🕒 Password History Modal -->
+        <div id="history-modal" class="modal-overlay hidden">
+            <div class="glass-card modal-content" style="max-width: 480px !important;">
+                <h3>Password History</h3>
+                <p id="history-prompt" class="subtitle" style="margin-bottom: 16px;">Historical passwords for website...</p>
+                <div class="table-wrapper" style="max-height: 250px; margin-bottom: 16px;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Old Password</th>
+                                <th style="text-align: right; width: 140px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body">
+                            <!-- Dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+                <button onclick="closeHistoryModal()" class="btn btn-secondary" style="width: 100%;">Close</button>
+            </div>
+        </div>
 
         <!-- 🔐 Master Password Verification Modal -->
         <div id="verify-modal" class="modal-overlay hidden">
@@ -1181,6 +1817,77 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 <div style="display: flex; gap: 12px; margin-top: 10px;">
                     <button id="verify-cancel-btn" onclick="closeVerifyModal()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
                     <button id="verify-confirm-btn" onclick="submitVerifyModal()" class="btn btn-primary" style="flex: 1;">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔎 Credential Details Inspector Modal -->
+        <div id="details-modal" class="modal-overlay hidden">
+            <div class="glass-card modal-content" style="max-width: 550px !important; text-align: left;">
+                <h3 id="details-title" style="margin-bottom: 4px;">Account Details</h3>
+                <p id="details-subtitle" class="subtitle" style="margin-bottom: 20px;">Detailed inspector for credential record.</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.85em;">Website</label>
+                            <input type="text" id="details-site" readonly style="background: rgba(255,255,255,0.02); cursor: default; margin-top: 4px;">
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; font-size: 0.85em;">Username / Email</label>
+                            <input type="text" id="details-user" readonly style="background: rgba(255,255,255,0.02); cursor: default; margin-top: 4px;">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.85em;">Password</label>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                            <input type="password" id="details-pass" readonly style="background: rgba(255,255,255,0.02); cursor: default; flex-grow: 1;">
+                            <button id="btn-details-show-pass" onclick="toggleDetailsPassword()" class="table-btn" style="height: 44px; min-width: 60px;">Show</button>
+                            <button onclick="copyDetailsPassword()" class="table-btn" style="height: 44px; min-width: 60px;">Copy</button>
+                        </div>
+                    </div>
+
+                    <div id="details-totp-container" class="hidden">
+                        <label style="font-weight: 600; font-size: 0.85em; color: var(--success-green);">Two-Factor Authentication (2FA)</label>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                            <input type="text" id="details-totp-code" readonly style="font-family: monospace; font-size: 1.4em; letter-spacing: 0.15em; text-align: center; background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.2); color: var(--success-green); cursor: default; flex-grow: 1; height: 48px;">
+                            <button onclick="copyDetailsTotp()" class="table-btn" style="height: 48px; min-width: 60px;">Copy</button>
+                        </div>
+                        <div class="totp-progress-container">
+                            <span style="font-size: 0.75em; color: var(--text-secondary);">Code refreshes in <span id="totp-countdown-val">30</span>s</span>
+                            <div class="totp-progress-bar">
+                                <div id="totp-progress-bar-fill" class="totp-progress-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="font-weight: 600; font-size: 0.85em;">Secure Notes</label>
+                        <textarea id="details-notes" readonly style="background: rgba(255,255,255,0.02); cursor: default; min-height: 100px; margin-top: 4px; font-size: 0.95em;"></textarea>
+                    </div>
+
+                    <div id="details-attachment-container" class="hidden">
+                        <label style="font-weight: 600; font-size: 0.85em;">Attached File</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.15); border-radius: 8px; padding: 10px 14px;">
+                            <span id="details-attachment-name" style="font-size: 0.95em; color: #93c5fd; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;">filename.pdf</span>
+                            <button onclick="downloadAttachment()" class="btn btn-secondary" style="font-size: 0.85em; padding: 6px 12px; margin: 0; width: auto;">Download</button>
+                        </div>
+                    </div>
+
+                    <div id="details-history-container" class="hidden">
+                        <label style="font-weight: 600; font-size: 0.85em; color: #c084fc;">Password History</label>
+                        <div class="table-wrapper" style="max-height: 120px; margin-top: 4px;">
+                            <table style="width: 100%;">
+                                <tbody id="details-history-body">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button onclick="closeDetailsModal()" class="btn btn-secondary" style="flex: 1; margin: 0;">Close</button>
                 </div>
             </div>
         </div>

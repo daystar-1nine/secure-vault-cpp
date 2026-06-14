@@ -24,6 +24,9 @@ public:
     // 🔹 Add credential (returns false if duplicate)
     bool addCredential(const Credential& credential);
 
+    // 🔹 Add or update credential (archives old password into history if updated)
+    bool addOrUpdateCredential(const Credential& credential);
+
     // 🔹 Remove credential using website + username
     bool removeCredential(const std::string& website,
                           const std::string& username);

@@ -13,6 +13,34 @@ bool VaultManager::addCredential(const Credential& credential)
     return true;
 }
 
+// 🔹 Add or update credential (archives old password into history if updated)
+bool VaultManager::addOrUpdateCredential(const Credential& credential)
+{
+    auto it = std::find_if(credentials.begin(), credentials.end(),
+        [&](const Credential& c)
+        {
+            return c.getWebsite() == credential.getWebsite() && c.getUsername() == credential.getUsername();
+        });
+
+    if (it != credentials.end())
+    {
+        if (it->getPassword() != credential.getPassword())
+        {
+            std::string oldPass = it->getPassword();
+            it->setPassword(credential.getPassword());
+            it->addPasswordToHistory(oldPass);
+        }
+        for (const auto& p : credential.getPasswordHistory())
+        {
+            it->addPasswordToHistory(p);
+        }
+        return true;
+    }
+
+    credentials.push_back(credential);
+    return true;
+}
+
 // 🔹 Remove credential by website + username
 bool VaultManager::removeCredential(const std::string& website,
                                     const std::string& username)
