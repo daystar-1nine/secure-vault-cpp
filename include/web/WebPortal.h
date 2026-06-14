@@ -609,6 +609,47 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         let scale = 1.0;
         let bannerTimer = null;
         let lockoutInterval = null;
+        let clipboardTimer = null;
+        let inactivityTimer = null;
+        const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes auto-lock timeout
+
+        // 🔹 Inactivity tracking
+        function resetInactivityTimer() {
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+            const dashboard = document.getElementById("dashboard-view");
+            if (dashboard && !dashboard.classList.contains("hidden")) {
+                inactivityTimer = setTimeout(() => {
+                    handleLock();
+                    showAlert("Vault locked automatically due to inactivity.");
+                }, INACTIVITY_LIMIT);
+            }
+        }
+
+        function stopInactivityTimer() {
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+        }
+
+        // Event listeners to detect user activity
+        ["mousemove", "mousedown", "keydown", "click", "scroll"].forEach(event => {
+            window.addEventListener(event, resetInactivityTimer);
+        });
+
+        // 🔹 Clipboard safe copy
+        function copyPassword(text) {
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    showAlert("Password copied to clipboard! (Auto-clears in 20s)", true);
+                    if (clipboardTimer) clearTimeout(clipboardTimer);
+                    clipboardTimer = setTimeout(() => {
+                        navigator.clipboard.writeText("");
+                        const dashboard = document.getElementById("dashboard-view");
+                        if (dashboard && !dashboard.classList.contains("hidden")) {
+                            showAlert("Clipboard cleared for security.", true);
+                        }
+                    }, 20000);
+                })
+                .catch(() => showAlert("Failed to copy password."));
+        }
 
         // On Page Load
         window.addEventListener("DOMContentLoaded", () => {
@@ -768,6 +809,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             document.getElementById("dashboard-view").classList.remove("hidden");
             
             fetchCredentials();
+            resetInactivityTimer();
         }
 
         // 🔹 Fetch Credentials
@@ -830,8 +872,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 btnCopy.className = "table-btn";
                 btnCopy.textContent = "Copy";
                 btnCopy.onclick = () => {
-                    navigator.clipboard.writeText(c.password);
-                    showAlert("Password copied to clipboard!", true);
+                    copyPassword(c.password);
                 };
                 tdActions.appendChild(btnCopy);
 
@@ -923,6 +964,11 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
 
         // 🔹 Lock Vault
         function handleLock() {
+            stopInactivityTimer();
+            if (clipboardTimer) {
+                clearTimeout(clipboardTimer);
+                navigator.clipboard.writeText("");
+            }
             window.api_lock()
                 .then(data => {
                     if (data.success) {
@@ -990,6 +1036,11 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
         // 🔹 Exit/Shutdown App
         function handleShutdown() {
             if (confirm("Are you sure you want to lock the vault and close the application?")) {
+                stopInactivityTimer();
+                if (clipboardTimer) {
+                    clearTimeout(clipboardTimer);
+                    navigator.clipboard.writeText("");
+                }
                 window.api_shutdown()
                     .then(() => {
                         if (lockoutInterval) clearInterval(lockoutInterval);

@@ -144,8 +144,12 @@ int main()
 
         std::string masterPassword = "";
 
-        // Create desktop webview window (debug = true for devtools support)
+        // Create desktop webview window (debug = true in debug builds, false in release builds)
+#ifdef NDEBUG
+        webview::webview w(false, nullptr);
+#else
         webview::webview w(true, nullptr);
+#endif
         w.set_title("Secure Password Vault");
         w.set_size(1024, 768, WEBVIEW_HINT_NONE);
 
