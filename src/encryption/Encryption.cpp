@@ -5,6 +5,10 @@
 #include <sstream>
 #include <iomanip>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // 🔹 Encrypt plain text using ChaCha20-Poly1305 (direct lock)
 std::string Encryption::encrypt(
     const std::string& plainText,
@@ -34,6 +38,10 @@ std::string Encryption::encrypt(
     inputs.salt = salt.data();
     inputs.salt_size = static_cast<uint32_t>(salt.size());
 
+#ifdef _WIN32
+    VirtualLock(key.data(), key.size());
+#endif
+
     crypto_argon2(key.data(), key.size(),
                   workArea.data(),
                   config,
@@ -50,6 +58,19 @@ std::string Encryption::encrypt(
                      nonce.data(),
                      NULL, 0, // No associated data
                      reinterpret_cast<const uint8_t*>(plainText.data()), plainText.size());
+
+#ifdef _WIN32
+    VirtualUnlock(key.data(), key.size());
+#endif
+    // Securely wipe the derived key
+    {
+        volatile uint8_t* pKey = const_cast<volatile uint8_t*>(key.data());
+        size_t keySize = key.size();
+        while (keySize--)
+        {
+            *pKey++ = 0;
+        }
+    }
 
     // 4. Combine: salt (16 bytes) + nonce (24 bytes) + MAC (16 bytes) + ciphertext
     std::vector<uint8_t> outBytes;
@@ -114,6 +135,10 @@ std::optional<std::string> Encryption::decrypt(
     inputs.salt = salt.data();
     inputs.salt_size = static_cast<uint32_t>(salt.size());
 
+#ifdef _WIN32
+    VirtualLock(key.data(), key.size());
+#endif
+
     crypto_argon2(key.data(), key.size(),
                   workArea.data(),
                   config,
@@ -129,6 +154,19 @@ std::optional<std::string> Encryption::decrypt(
                                            nonce.data(),
                                            NULL, 0,
                                            ciphertext.data(), ciphertext.size());
+
+#ifdef _WIN32
+    VirtualUnlock(key.data(), key.size());
+#endif
+    // Securely wipe the derived key
+    {
+        volatile uint8_t* pKey = const_cast<volatile uint8_t*>(key.data());
+        size_t keySize = key.size();
+        while (keySize--)
+        {
+            *pKey++ = 0;
+        }
+    }
 
     if (decryptResult != 0)
     {

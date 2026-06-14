@@ -199,6 +199,9 @@ static bool clearClipboardIfMatching(const std::string& expected)
 static void secureWipeString(std::string& s)
 {
     if (s.empty()) return;
+#ifdef _WIN32
+    VirtualUnlock(const_cast<char*>(s.data()), s.size());
+#endif
     volatile char* p = const_cast<volatile char*>(s.data());
     size_t size = s.size();
     while (size--)
@@ -206,6 +209,15 @@ static void secureWipeString(std::string& s)
         *p++ = 0;
     }
     s.clear();
+}
+
+// 🔒 Memory Locker for sensitive strings (prevents paging to disk)
+static void secureLockString(std::string& s)
+{
+    if (s.empty()) return;
+#ifdef _WIN32
+    VirtualLock(const_cast<char*>(s.data()), s.size());
+#endif
 }
 
 // 🔑 Base32 Decoder for TOTP Secrets
@@ -760,12 +772,14 @@ int main()
         // 🔹 Bind: Create Vault Master Password
         w.bind("api_setup", [&](std::string req) -> std::string {
             std::string pass = getArg(req, 0);
+            secureLockString(pass);
             std::string json;
             if (pass.empty()) {
                 json = "{\"success\":false,\"error\":\"Password cannot be empty.\"}";
             } else {
                 if (authManager.createVaultPassword(pass)) {
                     masterPassword = pass;
+                    secureLockString(masterPassword);
                     // Save empty vault to initialize
                     storageManager.saveVault(std::vector<Credential>(), masterPassword);
                     json = "{\"success\":true}";
@@ -780,9 +794,11 @@ int main()
         // 🔹 Bind: Unlock Vault
         w.bind("api_login", [&](std::string req) -> std::string {
             std::string pass = getArg(req, 0);
+            secureLockString(pass);
             std::string json;
             if (authManager.verifyVaultPassword(pass)) {
                 masterPassword = pass;
+                secureLockString(masterPassword);
                 auto loaded = storageManager.loadVault(masterPassword);
                 vaultManager.clearVault();
                 if (loaded) {
@@ -858,10 +874,14 @@ int main()
             std::string site = getArg(req, 0);
             std::string user = getArg(req, 1);
             std::string pass = getArg(req, 2);
+            secureLockString(pass);
             std::string totpSecret = getArg(req, 3);
+            secureLockString(totpSecret);
             std::string notes = getArg(req, 4);
+            secureLockString(notes);
             std::string attachmentName = getArg(req, 5);
             std::string attachmentData = getArg(req, 6);
+            secureLockString(attachmentData);
 
             std::string json;
             if (site.empty() || user.empty() || pass.empty()) {
@@ -890,6 +910,7 @@ int main()
         // 🔹 Bind: Clear clipboard conditionally if matching expected password
         w.bind("api_clear_clipboard_if_matching", [&](std::string req) -> std::string {
             std::string expected = getArg(req, 0);
+            secureLockString(expected);
             bool cleared = false;
 #ifdef _WIN32
             cleared = clearClipboardIfMatching(expected);
@@ -950,6 +971,7 @@ int main()
             if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
             std::string fileName = getArg(req, 0);
             std::string base64Data = getArg(req, 1);
+            secureLockString(base64Data);
             std::string json;
 
 #ifdef _WIN32
@@ -1003,6 +1025,7 @@ int main()
                 return "{\"error\":\"Unauthorized\"}";
             }
             std::string pass = getArg(req, 0);
+            secureLockString(pass);
             if (!authManager.verifyVaultPassword(pass)) {
                 secureWipeString(pass);
                 return "{\"success\":false,\"error\":\"Invalid master password.\"}";
@@ -1171,6 +1194,7 @@ int main()
         // 🔹 Bind: Verify master password
         w.bind("api_verify_password", [&](std::string req) -> std::string {
             std::string pass = getArg(req, 0);
+            secureLockString(pass);
             bool verified = authManager.verifyVaultPassword(pass);
             secureWipeString(pass);
             return verified ? "{\"success\":true}" : "{\"success\":false}";
@@ -1185,6 +1209,7 @@ int main()
             bool symbol = getArg(req, 4) == "true";
             
             std::string password = generatePassword(length, upper, lower, digit, symbol);
+            secureLockString(password);
             std::string json = "{\"password\":\"" + escapeJsonString(password) + "\"}";
             secureWipeString(password);
             return json;
