@@ -27,6 +27,7 @@ private:
     std::string attachmentName;
     std::string attachmentData;
     std::string category;
+    std::string expiryDate;  // YYYY-MM-DD format, empty = never expires
 
     // Hex helpers to serialize notes safely
     static std::string toHex(const std::string& input)
@@ -133,6 +134,7 @@ public:
     std::string getAttachmentName() const { return attachmentName; }
     std::string getAttachmentData() const { return attachmentData; }
     std::string getCategory() const { return category; }
+    std::string getExpiryDate() const { return expiryDate; }
 
     // 🔹 Setters
     void setWebsite(const std::string& site) { website = site; }
@@ -143,6 +145,7 @@ public:
     void setAttachmentName(const std::string& val) { attachmentName = val; }
     void setAttachmentData(const std::string& val) { attachmentData = val; }
     void setCategory(const std::string& val) { category = val; }
+    void setExpiryDate(const std::string& val) { expiryDate = val; }
 
     // 🔹 Password history helper
     void addPasswordToHistory(const std::string& pass)
@@ -175,7 +178,8 @@ public:
                toHex(notes) + "|" +
                escape(attachmentName, '|') + "|" +
                escape(attachmentData, '|') + "|" +
-               escape(category, '|');
+               escape(category, '|') + "|" +
+               escape(expiryDate, '|');
     }
 
     // 🔹 Load from string (safely splits escaped fields)
@@ -210,6 +214,7 @@ public:
         c.attachmentName = attName;
         c.attachmentData = attData;
         c.category = cat.empty() ? "Login" : cat;
+        c.expiryDate = parts.size() > 9 ? parts[9] : "";
         return c;
     }
 

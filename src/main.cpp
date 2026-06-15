@@ -219,6 +219,7 @@ int main()
                 json += "\"attachmentName\":\"" + escapeJsonString(c.getAttachmentName()) + "\",";
                 json += "\"attachmentData\":\"\","; // Omit large attachment data payload from list
                 json += "\"category\":\"" + escapeJsonString(c.getCategory()) + "\",";
+                json += "\"expiryDate\":\"" + escapeJsonString(c.getExpiryDate()) + "\",";
 
                 json += "\"history\":[";
                 const auto& history = c.getPasswordHistory();
@@ -346,6 +347,7 @@ int main()
             std::string category = getArg(req, 7);
             if (category.empty()) category = "Login";
             secureLockString(category);
+            std::string expiryDate = getArg(req, 8);
 
             std::string json;
             if (site.empty() || user.empty() || pass.empty()) {
@@ -357,6 +359,7 @@ int main()
                 credential.setAttachmentName(attachmentName);
                 credential.setAttachmentData(attachmentData);
                 credential.setCategory(category);
+                credential.setExpiryDate(expiryDate);
 
                 if (vaultManager.addOrUpdateCredential(credential)) {
                     storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
@@ -698,6 +701,17 @@ int main()
             secureLockString(password);
             std::string json = "{\"password\":\"" + escapeJsonString(password) + "\"}";
             secureWipeString(password);
+            return json;
+        });
+
+        // 🔹 Bind: Passphrase generator (Diceware-style)
+        w.bind("api_generate_passphrase", [&](std::string req) -> std::string {
+            int words = 4;
+            try { words = std::stoi(getArg(req, 0)); } catch (...) {}
+            std::string sep = getArg(req, 1);
+            if (sep.empty()) sep = "-";
+            std::string phrase = generatePassphrase(words, sep);
+            std::string json = "{\"passphrase\":\"" + escapeJsonString(phrase) + "\"}";
             return json;
         });
 

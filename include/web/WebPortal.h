@@ -1061,7 +1061,14 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                             </div>
                             <div class="form-group">
                                 <label for="add-pass">Password</label>
-                                <input type="password" id="add-pass" required placeholder="Type password...">
+                                <input type="password" id="add-pass" required placeholder="Type password..." oninput="updateStrengthMeter(this.value)">
+                                <!-- 🔴🟠🟡🟢 Live Password Strength Meter -->
+                                <div id="pass-strength-wrap" style="margin-top:6px;">
+                                    <div style="background:rgba(255,255,255,0.07);border-radius:4px;height:5px;overflow:hidden;">
+                                        <div id="pass-strength-bar" style="height:5px;width:0%;border-radius:4px;transition:width 0.35s ease,background 0.35s ease;"></div>
+                                    </div>
+                                    <span id="pass-strength-label" style="font-size:0.73em;margin-top:4px;display:block;color:var(--text-secondary);"></span>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label for="add-totp">TOTP Secret (2FA Key) - Optional</label>
@@ -1076,6 +1083,12 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                             <div class="form-group">
                                 <label for="add-tags">Custom Tags - Optional (comma-separated)</label>
                                 <input type="text" id="add-tags" placeholder="e.g. Work, Finance, Personal">
+                            </div>
+
+                            <!-- Password Expiry Date -->
+                            <div class="form-group">
+                                <label for="add-expiry">Password Expiry Date - Optional</label>
+                                <input type="date" id="add-expiry" style="color-scheme:dark;">
                             </div>
 
                             <div class="form-group">
@@ -1178,25 +1191,54 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
 
                     <!-- Secure Password Generator Section -->
                     <div class="settings-section" style="margin-top: 10px;">
-                        <div class="settings-title">Secure Password Generator</div>
-                        <div class="form-group" style="margin-bottom: 10px;">
-                            <label for="gen-length">Length: <span id="gen-length-val">16</span></label>
-                            <input type="range" id="gen-length" min="8" max="64" value="16" class="scale-slider" oninput="document.getElementById('gen-length-val').textContent=this.value; handleGeneratePassword();">
+                        <div class="settings-title">Secure Generator</div>
+
+                        <!-- Generator Mode Tabs -->
+                        <div style="display:flex;gap:6px;margin-bottom:12px;">
+                            <button id="gen-tab-pass" onclick="switchGenTab('password')" class="table-btn" style="flex:1;font-size:0.8em;background:rgba(59,130,246,0.2);border-color:var(--accent-blue);">🔑 Password</button>
+                            <button id="gen-tab-phrase" onclick="switchGenTab('phrase')" class="table-btn" style="flex:1;font-size:0.8em;">💬 Passphrase</button>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 0.85em; text-align: left;">
-                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
-                                <input type="checkbox" id="gen-upper" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> A-Z
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
-                                <input type="checkbox" id="gen-lower" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> a-z
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
-                                <input type="checkbox" id="gen-digit" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> 0-9
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
-                                <input type="checkbox" id="gen-symbol" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> Special
-                            </label>
+
+                        <!-- Password Options -->
+                        <div id="gen-panel-password">
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label for="gen-length">Length: <span id="gen-length-val">16</span></label>
+                                <input type="range" id="gen-length" min="8" max="64" value="16" class="scale-slider" oninput="document.getElementById('gen-length-val').textContent=this.value; handleGeneratePassword();">
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; font-size: 0.85em; text-align: left;">
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                    <input type="checkbox" id="gen-upper" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> A-Z
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                    <input type="checkbox" id="gen-lower" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> a-z
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                    <input type="checkbox" id="gen-digit" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> 0-9
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary);">
+                                    <input type="checkbox" id="gen-symbol" checked style="width: auto; margin: 0;" onchange="handleGeneratePassword()"> Special
+                                </label>
+                            </div>
                         </div>
+
+                        <!-- Passphrase Options -->
+                        <div id="gen-panel-phrase" style="display:none;">
+                            <div class="form-group" style="margin-bottom:10px;">
+                                <label for="gen-words">Words: <span id="gen-words-val">4</span></label>
+                                <input type="range" id="gen-words" min="3" max="8" value="4" class="scale-slider" oninput="document.getElementById('gen-words-val').textContent=this.value; handleGeneratePassphrase();">
+                            </div>
+                            <div class="form-group" style="margin-bottom:12px;">
+                                <label for="gen-sep">Separator</label>
+                                <select id="gen-sep" onchange="handleGeneratePassphrase()" style="padding:6px 10px;border-radius:8px;background:rgba(10,10,15,0.7);color:var(--text-primary);border:1px solid var(--card-border);font-size:0.85em;">
+                                    <option value="-">Hyphen (-)</option>
+                                    <option value=".">Dot (.)</option>
+                                    <option value="_">Underscore (_)</option>
+                                    <option value=" ">Space</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Shared Result Row -->
                         <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
                             <input type="text" id="gen-result" readonly placeholder="Click Gen..." style="font-family: monospace; font-size: 0.9em; padding: 8px 12px; background: rgba(10, 10, 15, 0.7); cursor: default; border: 1px solid var(--card-border); border-radius: 8px; color: var(--text-primary); flex-grow: 1;">
                             <button onclick="copyGeneratedPassword()" class="table-btn" style="min-width: 50px; padding: 8px 12px;">Copy</button>
@@ -1252,6 +1294,14 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                             <div class="glass-card clickable-audit-card" onclick="filterVaultFromAudit('totp')" style="padding: 16px; text-align: left; max-width: none; border-color: rgba(16, 185, 129, 0.25); cursor: pointer;">
                                 <div style="font-size: 0.8em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">2FA Protected</div>
                                 <div id="audit-totp-count" style="font-size: 1.8em; font-weight: 700; margin-top: 4px; color: #86efac;">0</div>
+                            </div>
+                            <div class="glass-card clickable-audit-card" onclick="filterVaultFromAudit('duplicate')" style="padding: 16px; text-align: left; max-width: none; border-color: rgba(167, 139, 250, 0.25); cursor: pointer;">
+                                <div style="font-size: 0.8em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">Duplicate Passwords</div>
+                                <div id="audit-dup-count" style="font-size: 1.8em; font-weight: 700; margin-top: 4px; color: #c4b5fd;">0</div>
+                            </div>
+                            <div class="glass-card clickable-audit-card" onclick="filterVaultFromAudit('expired')" style="padding: 16px; text-align: left; max-width: none; border-color: rgba(239, 68, 68, 0.2); cursor: pointer;">
+                                <div style="font-size: 0.8em; text-transform: uppercase; color: var(--text-secondary); font-weight: 600;">Expired / Expiring</div>
+                                <div id="audit-exp-count" style="font-size: 1.8em; font-weight: 700; margin-top: 4px; color: #fb923c;">0</div>
                             </div>
                         </div>
                     </div>
@@ -2026,6 +2076,18 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     if (activeAuditFilter === 'weak' && c.password.length >= 12) return;
                     if (activeAuditFilter === 'totp' && (!c.totp_secret || c.totp_secret.trim() === "")) return;
                     if (activeAuditFilter === 'reused' && reusedMap.get(c.password) <= 1) return;
+                    if (activeAuditFilter === 'duplicate') {
+                        const cnt = credentials.filter(x => x.password === c.password).length;
+                        if (cnt <= 1) return;
+                    }
+                    if (activeAuditFilter === 'expired' && c.expiryDate) {
+                        const exp = new Date(c.expiryDate);
+                        const tday = new Date(); tday.setHours(0,0,0,0);
+                        const sn = new Date(tday); sn.setDate(sn.getDate()+30);
+                        if (exp > sn) return;
+                    } else if (activeAuditFilter === 'expired' && !c.expiryDate) {
+                        return;
+                    }
                 }
 
                 // Text filter
@@ -2041,10 +2103,21 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     openCredentialDetails(c);
                 };
 
-                // Cell: Website
+                // Cell: Website (with optional expiry badge)
                 const tdSite = document.createElement("td");
                 const isFav = localStorage.getItem("fav||" + c.website + "||" + c.username) === "true";
-                tdSite.innerHTML = (isFav ? "⭐ " : "") + c.website;
+                let expiryBadge = "";
+                if (c.expiryDate) {
+                    const exp = new Date(c.expiryDate);
+                    const tday = new Date(); tday.setHours(0,0,0,0);
+                    const sn = new Date(tday); sn.setDate(sn.getDate()+30);
+                    if (exp < tday) {
+                        expiryBadge = ` <span style="font-size:0.68em;background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:1px 5px;vertical-align:middle;">EXPIRED</span>`;
+                    } else if (exp <= sn) {
+                        expiryBadge = ` <span style="font-size:0.68em;background:rgba(249,115,22,0.15);color:#fb923c;border:1px solid rgba(249,115,22,0.3);border-radius:4px;padding:1px 5px;vertical-align:middle;">EXPIRING</span>`;
+                    }
+                }
+                tdSite.innerHTML = (isFav ? "⭐ " : "") + c.website + expiryBadge;
                 row.appendChild(tdSite);
 
                 // Cell: Username
@@ -2150,9 +2223,10 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             const totp = document.getElementById("add-totp").value || "";
             const notes = document.getElementById("add-notes").value || "";
             const tags = document.getElementById("add-tags").value.trim();
+            const expiry = document.getElementById("add-expiry").value || "";
             const attName = currentAttachedFile.name || "";
 
-            window.api_add_credential(site, user, pass, totp, notes, attName, "", category)
+            window.api_add_credential(site, user, pass, totp, notes, attName, "", category, expiry)
             .then(data => {
                 if (data.success) {
                     // Save tags in localStorage
@@ -2169,6 +2243,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     document.getElementById("add-totp").value = "";
                     document.getElementById("add-notes").value = "";
                     document.getElementById("add-tags").value = "";
+                    document.getElementById("add-expiry").value = "";
+                    updateStrengthMeter("");
                     clearAttachment();
 
                     showToast("Credential added and vault saved!", "success");
@@ -2546,6 +2622,79 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             }
         }
 
+        // ⚡ Feature 1: Live Password Strength Meter
+        function updateStrengthMeter(pass) {
+            const bar = document.getElementById("pass-strength-bar");
+            const label = document.getElementById("pass-strength-label");
+            if (!bar || !label) return;
+            if (!pass) { bar.style.width = "0%"; label.textContent = ""; return; }
+
+            let score = 0;
+            if (pass.length >= 8)  score += 15;
+            if (pass.length >= 12) score += 15;
+            if (pass.length >= 16) score += 10;
+            if (pass.length >= 20) score += 10;
+            if (/[A-Z]/.test(pass)) score += 10;
+            if (/[a-z]/.test(pass)) score += 10;
+            if (/[0-9]/.test(pass)) score += 10;
+            if (/[^A-Za-z0-9]/.test(pass)) score += 15;
+            // Penalty for repeating chars
+            const unique = new Set(pass).size;
+            if (unique < pass.length * 0.5) score -= 10;
+            score = Math.max(0, Math.min(100, score));
+
+            const levels = [
+                { min: 0,  max: 25,  label: "Weak",        color: "#ef4444" },
+                { min: 26, max: 49,  label: "Fair",        color: "#f97316" },
+                { min: 50, max: 69,  label: "Good",        color: "#eab308" },
+                { min: 70, max: 89,  label: "Strong",      color: "#22c55e" },
+                { min: 90, max: 100, label: "Very Strong", color: "#10b981" }
+            ];
+            const lvl = levels.find(l => score >= l.min && score <= l.max) || levels[0];
+            bar.style.width = score + "%";
+            bar.style.background = lvl.color;
+            label.textContent = lvl.label;
+            label.style.color = lvl.color;
+        }
+
+        // ⚡ Feature 2: Generator Tab Switcher
+        function switchGenTab(mode) {
+            const passPanel = document.getElementById("gen-panel-password");
+            const phrasePanel = document.getElementById("gen-panel-phrase");
+            const passBtn = document.getElementById("gen-tab-pass");
+            const phraseBtn = document.getElementById("gen-tab-phrase");
+            if (mode === 'password') {
+                passPanel.style.display = "";
+                phrasePanel.style.display = "none";
+                passBtn.style.background = "rgba(59,130,246,0.2)";
+                passBtn.style.borderColor = "var(--accent-blue)";
+                phraseBtn.style.background = "";
+                phraseBtn.style.borderColor = "";
+                handleGeneratePassword();
+            } else {
+                passPanel.style.display = "none";
+                phrasePanel.style.display = "";
+                phraseBtn.style.background = "rgba(59,130,246,0.2)";
+                phraseBtn.style.borderColor = "var(--accent-blue)";
+                passBtn.style.background = "";
+                passBtn.style.borderColor = "";
+                handleGeneratePassphrase();
+            }
+        }
+
+        // ⚡ Feature 2: Passphrase Generator
+        function handleGeneratePassphrase() {
+            const words = parseInt(document.getElementById("gen-words").value) || 4;
+            const sep = document.getElementById("gen-sep").value;
+            window.api_generate_passphrase(words.toString(), sep)
+                .then(data => {
+                    if (data && data.passphrase) {
+                        document.getElementById("gen-result").value = data.passphrase;
+                    }
+                })
+                .catch(() => showToast("Failed to generate passphrase.", "error"));
+        }
+
         // 🔹 Security Auditor Filters
         function filterVaultFromAudit(type) {
             activeAuditFilter = type;
@@ -2558,7 +2707,9 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 const filterNames = {
                     weak: "Weak Passwords",
                     reused: "Reused Passwords",
-                    totp: "2FA Protected"
+                    totp: "2FA Protected",
+                    duplicate: "Duplicate Passwords",
+                    expired: "Expired / Expiring Soon"
                 };
                 badgeText.textContent = filterNames[type] || type;
             } else {
@@ -2583,6 +2734,12 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             let weakCount = 0;
             let reusedMap = new Map();
             let totpCount = 0;
+            let dupCount = 0;
+            let expiredCount = 0;
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const soon = new Date(today);
+            soon.setDate(soon.getDate() + 30);
 
             credentials.forEach(c => {
                 // Weak if length < 12
@@ -2610,12 +2767,19 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 if (c.totp_secret && c.totp_secret.trim() !== "") {
                     totpCount++;
                 }
+
+                // Expiry tracking
+                if (c.expiryDate) {
+                    const exp = new Date(c.expiryDate);
+                    if (exp <= soon) expiredCount++;
+                }
             });
 
             let reusedCount = 0;
             reusedMap.forEach((users, pass) => {
                 if (users.length > 1) {
                     reusedCount += users.length;
+                    dupCount += users.length;
                     const row = document.createElement("tr");
                     const tdPass = document.createElement("td");
                     tdPass.textContent = pass.substring(0, 3) + "••••";
@@ -2632,6 +2796,14 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     reusedList.appendChild(row);
                 }
             });
+
+            // Update DOM element values
+            document.getElementById("audit-total-count").textContent = credentials.length;
+            document.getElementById("audit-weak-count").textContent = weakCount;
+            document.getElementById("audit-reused-count").textContent = reusedCount;
+            document.getElementById("audit-totp-count").textContent = totpCount;
+            document.getElementById("audit-dup-count").textContent = dupCount;
+            document.getElementById("audit-exp-count").textContent = expiredCount;
 
             // Calculate Overall Security Score
             let totalScore = 100;
@@ -2652,17 +2824,24 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     } else {
                         s += 10;
                     }
-                    
+
                     // Reuse penalty
                     if (reusedMap.get(c.password).length > 1) {
                         s -= 30;
                     }
-                    
+
                     // 2FA bonus
                     if (c.totp_secret && c.totp_secret.trim() !== "") {
                         s += 20;
                     }
-                    
+
+                    // Expiry penalty
+                    if (c.expiryDate) {
+                        const exp = new Date(c.expiryDate);
+                        if (exp < today)      s -= 10;  // Expired
+                        else if (exp <= soon) s -= 5;   // Expiring soon
+                    }
+
                     // Clamp
                     s = Math.max(0, Math.min(100, s));
                     sum += s;
