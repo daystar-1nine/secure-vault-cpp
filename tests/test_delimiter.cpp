@@ -122,6 +122,79 @@ int main() {
         printResult("Test 3: Empty Fields and Boundaries", ok);
     }
 
+    // --- TEST 4: Attachment Zero-IPC Optimization Emulation ---
+    {
+        std::string pendingAttachmentName = "";
+        std::string pendingAttachmentData = "";
+
+        // 1. Simulate attaching a file
+        pendingAttachmentName = "myDoc.pdf";
+        pendingAttachmentData = "dGhpcyBpcyBhIGZpbGU="; // base64 for "this is a file"
+
+        // 2. Simulate api_add_credential saving a new credential
+        std::string site = "github.com";
+        std::string user = "coder";
+        std::string pass = "safePass";
+        std::string attName = "myDoc.pdf";
+
+        // C++ resolves attachmentData
+        std::string resolvedData = "";
+        if (!attName.empty()) {
+            if (attName == pendingAttachmentName && !pendingAttachmentData.empty()) {
+                resolvedData = pendingAttachmentData;
+                pendingAttachmentName = "";
+                pendingAttachmentData = "";
+            }
+        }
+
+        Credential cred(site, user, pass);
+        cred.setAttachmentName(attName);
+        cred.setAttachmentData(resolvedData);
+
+        // Verify attachment saved
+        bool ok = true;
+        if (cred.getAttachmentName() != "myDoc.pdf") ok = false;
+        if (cred.getAttachmentData() != "dGhpcyBpcyBhIGZpbGU=") ok = false;
+
+        // 3. Simulate updating credential without changing attachment
+        std::string newPass = "saferPass";
+        std::string attNameUpdate = "myDoc.pdf";
+
+        // C++ resolves:
+        std::string resolvedDataUpdate = "";
+        if (!attNameUpdate.empty()) {
+            if (attNameUpdate == pendingAttachmentName && !pendingAttachmentData.empty()) {
+                resolvedDataUpdate = pendingAttachmentData;
+            } else {
+                // look up existing
+                if (cred.getWebsite() == site && cred.getUsername() == user) {
+                    resolvedDataUpdate = cred.getAttachmentData();
+                }
+            }
+        }
+
+        Credential updatedCred(site, user, newPass);
+        updatedCred.setAttachmentName(attNameUpdate);
+        updatedCred.setAttachmentData(resolvedDataUpdate);
+
+        // Verify attachment still preserved
+        if (updatedCred.getAttachmentName() != "myDoc.pdf") ok = false;
+        if (updatedCred.getAttachmentData() != "dGhpcyBpcyBhIGZpbGU=") ok = false;
+
+        // 4. Simulate clearing attachment
+        std::string attNameClear = "";
+        std::string resolvedDataClear = ""; // since attNameClear is empty
+
+        Credential clearedCred(site, user, newPass);
+        clearedCred.setAttachmentName(attNameClear);
+        clearedCred.setAttachmentData(resolvedDataClear);
+
+        if (clearedCred.getAttachmentName() != "") ok = false;
+        if (clearedCred.getAttachmentData() != "") ok = false;
+
+        printResult("Test 4: Attachment Zero-IPC Optimization Emulation", ok);
+    }
+
     std::cout << "Tests completed." << std::endl;
     return 0;
 }

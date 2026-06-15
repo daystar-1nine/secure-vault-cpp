@@ -68,9 +68,9 @@ if(WIN32)
     target_link_libraries(password_manager PRIVATE ws2_32 crypt32 ole32 comctl32 oleaut32 uuid shlwapi version)
 endif()
 
-# Compiler warning configurations
+# Compiler warning and optimization configurations
 if(MSVC)
-    target_compile_options(password_manager PRIVATE /W3)
+    target_compile_options(password_manager PRIVATE /W3 $<$<CONFIG:Release>:/O2>)
 else()
-    target_compile_options(password_manager PRIVATE -Wall -Wextra)
+    target_compile_options(password_manager PRIVATE -Wall -Wextra $<$<CONFIG:Release>:-O3 -march=native>)
 endif()

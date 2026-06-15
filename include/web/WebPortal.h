@@ -2117,7 +2117,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 .then(data => {
                     if (data.success) {
                         currentAttachedFile.name = data.fileName;
-                        currentAttachedFile.data = data.fileData;
+                        currentAttachedFile.data = "";
                         
                         const info = document.getElementById("attached-file-info");
                         info.textContent = data.fileName;
@@ -2151,9 +2151,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             const notes = document.getElementById("add-notes").value || "";
             const tags = document.getElementById("add-tags").value.trim();
             const attName = currentAttachedFile.name || "";
-            const attData = currentAttachedFile.data || "";
 
-            window.api_add_credential(site, user, pass, totp, notes, attName, attData, category)
+            window.api_add_credential(site, user, pass, totp, notes, attName, "", category)
             .then(data => {
                 if (data.success) {
                     // Save tags in localStorage
@@ -2410,8 +2409,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             const site = document.getElementById("details-site").value;
             const user = document.getElementById("details-user").value;
             const cred = credentials.find(c => c.website === site && c.username === user);
-            if (cred && cred.attachmentName && cred.attachmentData) {
-                window.api_download_file(cred.attachmentName, cred.attachmentData)
+            if (cred && cred.attachmentName) {
+                window.api_download_file(site, user)
                     .then(data => {
                         if (data.success) {
                             showToast(`File downloaded successfully to ${data.path}`, "success");

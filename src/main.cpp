@@ -97,6 +97,8 @@ int main()
         StorageManager storageManager;
 
         std::string masterPassword = "";
+        std::string pendingAttachmentName = "";
+        std::string pendingAttachmentData = "";
 
         // Create desktop webview window (debug = true in debug builds, false in release builds)
 #ifdef NDEBUG
@@ -215,7 +217,7 @@ int main()
                 // Notes, attachmentName, attachmentData
                 json += "\"notes\":\"" + escapeJsonString(c.getNotes()) + "\",";
                 json += "\"attachmentName\":\"" + escapeJsonString(c.getAttachmentName()) + "\",";
-                json += "\"attachmentData\":\"" + c.getAttachmentData() + "\","; // Base64 data doesn't need escaping
+                json += "\"attachmentData\":\"\","; // Omit large attachment data payload from list
                 json += "\"category\":\"" + escapeJsonString(c.getCategory()) + "\",";
 
                 json += "\"history\":[";
@@ -325,8 +327,22 @@ int main()
             std::string notes = getArg(req, 4);
             secureLockString(notes);
             std::string attachmentName = getArg(req, 5);
-            std::string attachmentData = getArg(req, 6);
+            std::string attachmentData = "";
+
+            if (!attachmentName.empty()) {
+                if (attachmentName == pendingAttachmentName && !pendingAttachmentData.empty()) {
+                    attachmentData = pendingAttachmentData;
+                    pendingAttachmentName = "";
+                    secureWipeString(pendingAttachmentData);
+                } else {
+                    auto existing = vaultManager.findCredential(site, user);
+                    if (existing) {
+                        attachmentData = existing->getAttachmentData();
+                    }
+                }
+            }
             secureLockString(attachmentData);
+
             std::string category = getArg(req, 7);
             if (category.empty()) category = "Login";
             secureLockString(category);
@@ -396,12 +412,18 @@ int main()
                     if (buffer.size() > 2 * 1024 * 1024) {
                         json = "{\"success\":false,\"error\":\"File size exceeds the 2MB limit.\"}";
                     } else {
+                        // Wipe any previous pending attachment
+                        secureWipeString(pendingAttachmentData);
+                        
                         std::string base64Data = base64Encode(buffer.data(), buffer.size());
                         std::filesystem::path p(filePath);
+                        pendingAttachmentName = p.filename().string();
+                        pendingAttachmentData = base64Data;
+                        secureLockString(pendingAttachmentData);
+
                         json = "{";
                         json += "\"success\":true,";
-                        json += "\"fileName\":\"" + escapeJsonString(p.filename().string()) + "\",";
-                        json += "\"fileData\":\"" + base64Data + "\"";
+                        json += "\"fileName\":\"" + escapeJsonString(pendingAttachmentName) + "\"";
                         json += "}";
                     }
                 } else {
@@ -416,13 +438,25 @@ int main()
             return json;
         });
 
-        // 🔹 Bind: Download file (opens native Win32 dialog, decodes base64, writes to disk)
+        // 🔹 Bind: Download file (opens native Win32 dialog, decodes base64 from C++ database, writes to disk)
         w.bind("api_download_file", [&](std::string req) -> std::string {
             if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
-            std::string fileName = getArg(req, 0);
-            std::string base64Data = getArg(req, 1);
-            secureLockString(base64Data);
+            std::string site = getArg(req, 0);
+            std::string user = getArg(req, 1);
             std::string json;
+
+            auto existing = vaultManager.findCredential(site, user);
+            if (!existing) {
+                return "{\"success\":false,\"error\":\"Credential not found.\"}";
+            }
+
+            std::string fileName = existing->getAttachmentName();
+            std::string base64Data = existing->getAttachmentData();
+            if (fileName.empty() || base64Data.empty()) {
+                return "{\"success\":false,\"error\":\"No attachment found for this credential.\"}";
+            }
+
+            secureLockString(base64Data);
 
 #ifdef _WIN32
             HWND hwnd = reinterpret_cast<HWND>(w.window().value());
@@ -638,6 +672,8 @@ int main()
         w.bind("api_lock", [&](std::string /*req*/) -> std::string {
             vaultManager.clearVault();
             secureWipeString(masterPassword);
+            pendingAttachmentName = "";
+            secureWipeString(pendingAttachmentData);
             return "{\"success\":true}";
         });
 
@@ -669,6 +705,8 @@ int main()
         w.bind("api_shutdown", [&](std::string /*req*/) -> std::string {
             vaultManager.clearVault();
             secureWipeString(masterPassword);
+            pendingAttachmentName = "";
+            secureWipeString(pendingAttachmentData);
             w.terminate();
             return "{\"success\":true}";
         });
