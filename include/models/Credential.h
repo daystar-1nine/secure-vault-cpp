@@ -26,6 +26,7 @@ private:
     std::string notes;
     std::string attachmentName;
     std::string attachmentData;
+    std::string category;
 
     // Hex helpers to serialize notes safely
     static std::string toHex(const std::string& input)
@@ -55,6 +56,52 @@ private:
         return output;
     }
 
+    // Delimiter escaping helpers to prevent DB corruption
+    static std::string escape(const std::string& input, char delimiter)
+    {
+        std::string output = "";
+        for (char c : input)
+        {
+            if (c == '\\') output += "\\\\";
+            else if (c == delimiter) {
+                output += '\\';
+                output += delimiter;
+            }
+            else output += c;
+        }
+        return output;
+    }
+
+    static std::vector<std::string> split(const std::string& s, char delimiter)
+    {
+        std::vector<std::string> tokens;
+        std::string token = "";
+        for (size_t i = 0; i < s.length(); ++i)
+        {
+            if (s[i] == '\\' && i + 1 < s.length() && s[i + 1] == delimiter)
+            {
+                token += delimiter;
+                i++;
+            }
+            else if (s[i] == '\\' && i + 1 < s.length() && s[i + 1] == '\\')
+            {
+                token += '\\';
+                i++;
+            }
+            else if (s[i] == delimiter)
+            {
+                tokens.push_back(token);
+                token = "";
+            }
+            else
+            {
+                token += s[i];
+            }
+        }
+        tokens.push_back(token);
+        return tokens;
+    }
+
     void secureWipe(std::string& s)
     {
         if (s.empty()) return;
@@ -74,7 +121,7 @@ public:
     Credential(const std::string& site,
                const std::string& user,
                const std::string& pass)
-        : website(site), username(user), password(pass) {}
+        : website(site), username(user), password(pass), category("Login") {}
 
     // 🔹 Getters (read-only access)
     std::string getWebsite() const { return website; }
@@ -85,6 +132,7 @@ public:
     std::string getNotes() const { return notes; }
     std::string getAttachmentName() const { return attachmentName; }
     std::string getAttachmentData() const { return attachmentData; }
+    std::string getCategory() const { return category; }
 
     // 🔹 Setters
     void setWebsite(const std::string& site) { website = site; }
@@ -94,6 +142,7 @@ public:
     void setNotes(const std::string& val) { notes = val; }
     void setAttachmentName(const std::string& val) { attachmentName = val; }
     void setAttachmentData(const std::string& val) { attachmentData = val; }
+    void setCategory(const std::string& val) { category = val; }
 
     // 🔹 Password history helper
     void addPasswordToHistory(const std::string& pass)
@@ -109,39 +158,46 @@ public:
         }
     }
 
-    // 🔹 Convert to string for file storage
+    // 🔹 Convert to string for file storage (safely escapes delimiters)
     std::string serialize() const
     {
         std::string historyStr = "";
         for (size_t i = 0; i < passwordHistory.size(); ++i)
         {
-            historyStr += passwordHistory[i];
+            historyStr += escape(passwordHistory[i], ';');
             if (i + 1 < passwordHistory.size()) historyStr += ";";
         }
-        return website + "|" + username + "|" + password + "|" + historyStr + "|" + totpSecret + "|" + toHex(notes) + "|" + attachmentName + "|" + attachmentData;
+        return escape(website, '|') + "|" +
+               escape(username, '|') + "|" +
+               escape(password, '|') + "|" +
+               escape(historyStr, '|') + "|" +
+               escape(totpSecret, '|') + "|" +
+               toHex(notes) + "|" +
+               escape(attachmentName, '|') + "|" +
+               escape(attachmentData, '|') + "|" +
+               escape(category, '|');
     }
 
-    // 🔹 Load from string (reverse of serialize)
+    // 🔹 Load from string (safely splits escaped fields)
     static Credential deserialize(const std::string& data)
     {
-        std::stringstream ss(data);
-        std::string site, user, pass, historyStr, totp, notesHex, attName, attData;
+        std::vector<std::string> parts = split(data, '|');
 
-        std::getline(ss, site, '|');
-        std::getline(ss, user, '|');
-        std::getline(ss, pass, '|');
-        std::getline(ss, historyStr, '|');
-        std::getline(ss, totp, '|');
-        std::getline(ss, notesHex, '|');
-        std::getline(ss, attName, '|');
-        std::getline(ss, attData, '|');
+        std::string site = parts.size() > 0 ? parts[0] : "";
+        std::string user = parts.size() > 1 ? parts[1] : "";
+        std::string pass = parts.size() > 2 ? parts[2] : "";
+        std::string historyStr = parts.size() > 3 ? parts[3] : "";
+        std::string totp = parts.size() > 4 ? parts[4] : "";
+        std::string notesHex = parts.size() > 5 ? parts[5] : "";
+        std::string attName = parts.size() > 6 ? parts[6] : "";
+        std::string attData = parts.size() > 7 ? parts[7] : "";
+        std::string cat = parts.size() > 8 ? parts[8] : "";
 
         Credential c(site, user, pass);
         if (!historyStr.empty())
         {
-            std::stringstream hss(historyStr);
-            std::string oldPass;
-            while (std::getline(hss, oldPass, ';'))
+            std::vector<std::string> historyParts = split(historyStr, ';');
+            for (const auto& oldPass : historyParts)
             {
                 if (!oldPass.empty())
                 {
@@ -153,6 +209,7 @@ public:
         c.notes = fromHex(notesHex);
         c.attachmentName = attName;
         c.attachmentData = attData;
+        c.category = cat.empty() ? "Login" : cat;
         return c;
     }
 
@@ -163,6 +220,7 @@ public:
         secureWipe(totpSecret);
         secureWipe(notes);
         secureWipe(attachmentData);
+        secureWipe(category);
         for (auto& oldPass : passwordHistory)
         {
             secureWipe(oldPass);

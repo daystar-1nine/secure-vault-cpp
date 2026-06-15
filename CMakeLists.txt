@@ -41,6 +41,11 @@ set(SOURCES
     src/storage/StorageManager.cpp
     src/vault/VaultManager.cpp
     src/web/webview_impl.cpp
+    src/utils/SecurityUtils.cpp
+    src/utils/CryptoUtils.cpp
+    src/utils/SystemUtils.cpp
+    src/utils/StringUtils.cpp
+    src/utils/GeneratorUtils.cpp
     ${MONOCYPHER_SOURCES}
 )
 

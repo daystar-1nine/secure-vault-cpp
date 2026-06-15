@@ -1,8 +1,13 @@
-#include "auth/AuthManager.h"
+#include "auth/AuthManager.h" // rebuild trigger 3
 #include "vault/VaultManager.h"
 #include "storage/StorageManager.h"
 #include "models/Credential.h"
 #include "web/WebPortal.h"
+#include "utils/SecurityUtils.h"
+#include "utils/CryptoUtils.h"
+#include "utils/SystemUtils.h"
+#include "utils/StringUtils.h"
+#include "utils/GeneratorUtils.h"
 
 #include <webview.h>
 
@@ -23,46 +28,6 @@
 #include <objbase.h>
 #include <commctrl.h>
 #include <commdlg.h>
-
-// 📂 Register shortcut in the Windows Start Menu on startup
-static void createStartMenuShortcut()
-{
-    CoInitialize(NULL);
-    IShellLink* pShellLink = NULL;
-    HRESULT hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&pShellLink);
-    if (SUCCEEDED(hr))
-    {
-        char exePath[MAX_PATH];
-        GetModuleFileNameA(NULL, exePath, MAX_PATH);
-        pShellLink->SetPath(exePath);
-        
-        std::string exeStr(exePath);
-        size_t lastSlash = exeStr.find_last_of("\\/");
-        std::string dirStr = (lastSlash == std::string::npos) ? "" : exeStr.substr(0, lastSlash);
-        pShellLink->SetWorkingDirectory(dirStr.c_str());
-        pShellLink->SetDescription("Secure Password Vault");
-
-        IPersistFile* pPersistFile = NULL;
-        hr = pShellLink->QueryInterface(IID_IPersistFile, (LPVOID*)&pPersistFile);
-        if (SUCCEEDED(hr))
-        {
-            char startMenuPath[MAX_PATH];
-            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, startMenuPath)))
-            {
-                std::string shortcutFolder = std::string(startMenuPath) + "\\Microsoft\\Windows\\Start Menu\\Programs";
-                std::string shortcutPath = shortcutFolder + "\\Secure Vault.lnk";
-                
-                wchar_t wShortcutPath[MAX_PATH];
-                MultiByteToWideChar(CP_ACP, 0, shortcutPath.c_str(), -1, wShortcutPath, MAX_PATH);
-                
-                pPersistFile->Save(wShortcutPath, TRUE);
-            }
-            pPersistFile->Release();
-        }
-        pShellLink->Release();
-    }
-    CoUninitialize();
-}
 
 // 🕒 Subclassing window procedure and wtsapi functions for Auto-Lock
 typedef BOOL (WINAPI *WTSRegisterSessionNotificationProc)(HWND, DWORD);
@@ -109,610 +74,10 @@ static LRESULT CALLBACK WebviewWindowSubclass(HWND hWnd, UINT uMsg, WPARAM wPara
     }
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
-
-// Native Win32 file dialogs
-static std::string openFileDialog(HWND hwnd)
-{
-    char szFile[260] = {0};
-    OPENFILENAMEA ofn;
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "CSV Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0";
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = NULL;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-    if (GetOpenFileNameA(&ofn) == TRUE) {
-        return std::string(ofn.lpstrFile);
-    }
-    return "";
-}
-
-static std::string saveFileDialog(HWND hwnd)
-{
-    char szFile[260] = {0};
-    OPENFILENAMEA ofn;
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "CSV Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0";
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = NULL;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-    if (GetSaveFileNameA(&ofn) == TRUE) {
-        std::string path = ofn.lpstrFile;
-        if (path.length() < 4 || path.substr(path.length() - 4) != ".csv") {
-            path += ".csv";
-        }
-        return path;
-    }
-    return "";
-}
-
-// 🕒 Check system idle time (inactivity)
-static uint32_t getSystemIdleTimeMs()
-{
-    LASTINPUTINFO lii;
-    lii.cbSize = sizeof(LASTINPUTINFO);
-    if (GetLastInputInfo(&lii))
-    {
-        DWORD now = GetTickCount();
-        return now - lii.dwTime;
-    }
-    return 0;
-}
-
-// 📋 Conditional clipboard clearing
-static bool clearClipboardIfMatching(const std::string& expected)
-{
-    if (!OpenClipboard(NULL)) return false;
-    HANDLE hData = GetClipboardData(CF_TEXT);
-    if (hData)
-    {
-        char* pszText = static_cast<char*>(GlobalLock(hData));
-        if (pszText)
-        {
-            std::string currentText(pszText);
-            GlobalUnlock(hData);
-            if (currentText == expected)
-            {
-                EmptyClipboard();
-                CloseClipboard();
-                return true;
-            }
-        }
-    }
-    CloseClipboard();
-    return false;
-}
 #endif
 
-// 🔐 Secure Memory Wiper for C++ strings
-static void secureWipeString(std::string& s)
-{
-    if (s.empty()) return;
-#ifdef _WIN32
-    VirtualUnlock(const_cast<char*>(s.data()), s.size());
-#endif
-    volatile char* p = const_cast<volatile char*>(s.data());
-    size_t size = s.size();
-    while (size--)
-    {
-        *p++ = 0;
-    }
-    s.clear();
-}
 
-// 🔒 Memory Locker for sensitive strings (prevents paging to disk)
-static void secureLockString(std::string& s)
-{
-    if (s.empty()) return;
-#ifdef _WIN32
-    VirtualLock(const_cast<char*>(s.data()), s.size());
-#endif
-}
-
-// 🔑 Base32 Decoder for TOTP Secrets
-static std::vector<uint8_t> base32Decode(const std::string& input)
-{
-    std::vector<uint8_t> result;
-    int buffer = 0;
-    int bitsLeft = 0;
-    for (char c : input)
-    {
-        if (c == ' ' || c == '-') continue;
-        int val = 0;
-        if (c >= 'A' && c <= 'Z') val = c - 'A';
-        else if (c >= 'a' && c <= 'z') val = c - 'a';
-        else if (c >= '2' && c <= '7') val = c - '2' + 26;
-        else if (c == '=') break;
-        else continue;
-
-        buffer = (buffer << 5) | val;
-        bitsLeft += 5;
-        if (bitsLeft >= 8)
-        {
-            result.push_back(static_cast<uint8_t>((buffer >> (bitsLeft - 8)) & 0xFF));
-            bitsLeft -= 8;
-        }
-    }
-    return result;
-}
-
-// 🔑 Self-contained SHA-1 implementation
-struct SHA1
-{
-    uint32_t state[5];
-    uint32_t count[2];
-    uint8_t buffer[64];
-
-    void init()
-    {
-        state[0] = 0x67452301;
-        state[1] = 0xEFCDAB89;
-        state[2] = 0x98BADCFE;
-        state[3] = 0x10325476;
-        state[4] = 0xC3D2E1F0;
-        count[0] = count[1] = 0;
-    }
-
-    static uint32_t rol(uint32_t value, uint32_t bits)
-    {
-        return (value << bits) | (value >> (32 - bits));
-    }
-
-    void transform(const uint8_t* block)
-    {
-        uint32_t w[80];
-        for (int i = 0; i < 16; i++)
-        {
-            w[i] = (block[i * 4] << 24) | (block[i * 4 + 1] << 16) | (block[i * 4 + 2] << 8) | block[i * 4 + 3];
-        }
-        for (int i = 16; i < 80; i++)
-        {
-            w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
-        }
-
-        uint32_t a = state[0], b = state[1], c = state[2], d = state[3], e = state[4];
-
-        for (int i = 0; i < 20; i++)
-        {
-            uint32_t temp = rol(a, 5) + ((b & c) | (~b & d)) + e + w[i] + 0x5A827999;
-            e = d; d = c; c = rol(b, 30); b = a; a = temp;
-        }
-        for (int i = 20; i < 40; i++)
-        {
-            uint32_t temp = rol(a, 5) + (b ^ c ^ d) + e + w[i] + 0x6ED9EBA1;
-            e = d; d = c; c = rol(b, 30); b = a; a = temp;
-        }
-        for (int i = 40; i < 60; i++)
-        {
-            uint32_t temp = rol(a, 5) + ((b & c) | (b & d) | (c & d)) + e + w[i] + 0x8F1BBCDC;
-            e = d; d = c; c = rol(b, 30); b = a; a = temp;
-        }
-        for (int i = 60; i < 80; i++)
-        {
-            uint32_t temp = rol(a, 5) + (b ^ c ^ d) + e + w[i] + 0xCA62C1D6;
-            e = d; d = c; c = rol(b, 30); b = a; a = temp;
-        }
-
-        state[0] += a;
-        state[1] += b;
-        state[2] += c;
-        state[3] += d;
-        state[4] += e;
-    }
-
-    void update(const uint8_t* data, uint32_t len)
-    {
-        uint32_t j = (count[0] >> 3) & 63;
-        if ((count[0] += len << 3) < (len << 3)) count[1]++;
-        count[1] += (len >> 29);
-        uint32_t i = 0;
-        if ((j + len) > 63)
-        {
-            memcpy(&buffer[j], data, (i = 64 - j));
-            transform(buffer);
-            for (; i + 63 < len; i += 64)
-            {
-                transform(&data[i]);
-            }
-            j = 0;
-        }
-        memcpy(&buffer[j], &data[i], len - i);
-    }
-
-    void final(uint8_t digest[20])
-    {
-        uint8_t finalcount[8];
-        for (int i = 0; i < 8; i++)
-        {
-            finalcount[i] = static_cast<uint8_t>((count[(i >= 4 ? 0 : 1)] >> ((3 - (i & 3)) * 8)) & 255);
-        }
-        uint8_t c = 0200;
-        update(&c, 1);
-        while ((count[0] & 504) != 448)
-        {
-            uint8_t z = 0;
-            update(&z, 1);
-        }
-        update(finalcount, 8);
-        for (int i = 0; i < 20; i++)
-        {
-            digest[i] = static_cast<uint8_t>((state[i >> 2] >> ((3 - (i & 3)) * 8)) & 255);
-        }
-    }
-};
-
-// 🔑 HMAC-SHA1 Implementation
-static void hmacSha1(const uint8_t* key, size_t keyLen, const uint8_t* msg, size_t msgLen, uint8_t output[20])
-{
-    uint8_t k[64] = {0};
-    if (keyLen > 64)
-    {
-        SHA1 sha;
-        sha.init();
-        sha.update(key, keyLen);
-        sha.final(k);
-    }
-    else
-    {
-        memcpy(k, key, keyLen);
-    }
-
-    uint8_t ipad[64];
-    uint8_t opad[64];
-    for (int i = 0; i < 64; i++)
-    {
-        ipad[i] = k[i] ^ 0x36;
-        opad[i] = k[i] ^ 0x5C;
-    }
-
-    SHA1 shaInner;
-    shaInner.init();
-    shaInner.update(ipad, 64);
-    shaInner.update(msg, msgLen);
-    uint8_t innerDigest[20];
-    shaInner.final(innerDigest);
-
-    SHA1 shaOuter;
-    shaOuter.init();
-    shaOuter.update(opad, 64);
-    shaOuter.update(innerDigest, 20);
-    shaOuter.final(output);
-}
-
-// 🔑 TOTP Rolling Generator (6 digits)
-static std::string generateTotp(const std::string& secret, uint64_t timeStep)
-{
-    auto key = base32Decode(secret);
-    if (key.empty()) return "";
-
-    uint8_t msg[8];
-    for (int i = 7; i >= 0; i--)
-    {
-        msg[i] = static_cast<uint8_t>(timeStep & 0xFF);
-        timeStep >>= 8;
-    }
-
-    uint8_t hash[20];
-    hmacSha1(key.data(), key.size(), msg, 8, hash);
-
-    int offset = hash[19] & 0xF;
-    uint32_t binary = ((hash[offset] & 0x7F) << 24) |
-                      ((hash[offset + 1] & 0xFF) << 16) |
-                      ((hash[offset + 2] & 0xFF) << 8) |
-                      (hash[offset + 3] & 0xFF);
-
-    uint32_t otp = binary % 1000000;
-    std::string result = std::to_string(otp);
-    while (result.length() < 6)
-    {
-        result = "0" + result;
-    }
-    return result;
-}
-
-// 🔑 Base64 Encoder
-static std::string base64Encode(const uint8_t* data, size_t len)
-{
-    static const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string result = "";
-    int i = 0;
-    int j = 0;
-    uint8_t char_array_3[3];
-    uint8_t char_array_4[4];
-
-    while (len--)
-    {
-        char_array_3[i++] = *(data++);
-        if (i == 3)
-        {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-
-            for (i = 0; (i < 4); i++)
-                result += chars[char_array_4[i]];
-            i = 0;
-        }
-    }
-
-    if (i)
-    {
-        for (j = i; j < 3; j++)
-            char_array_3[j] = '\0';
-
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-
-        for (j = 0; (j < i + 1); j++)
-            result += chars[char_array_4[j]];
-
-        while ((i++ < 3))
-            result += '=';
-    }
-
-    return result;
-}
-
-// 🔑 Base64 Decoder
-static std::vector<uint8_t> base64Decode(const std::string& input)
-{
-    static const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::vector<uint8_t> result;
-    int i = 0;
-    int j = 0;
-    int in_ = 0;
-    uint8_t char_array_4[4], char_array_3[3];
-
-    while (in_ < input.size() && input[in_] != '=')
-    {
-        char_array_4[i++] = input[in_++];
-        if (i == 4)
-        {
-            for (i = 0; i < 4; i++)
-                char_array_4[i] = chars.find(char_array_4[i]);
-
-            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
-
-            for (i = 0; (i < 3); i++)
-                result.push_back(char_array_3[i]);
-            i = 0;
-        }
-    }
-
-    if (i)
-    {
-        for (j = i; j < 4; j++)
-            char_array_4[j] = 0;
-
-        for (j = 0; j < 4; j++)
-            char_array_4[j] = chars.find(char_array_4[j]);
-
-        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
-        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
-
-        for (j = 0; j < i - 1; j++)
-            result.push_back(char_array_3[j]);
-    }
-
-    return result;
-}
-
-// 🔍 Escape special characters in strings for JSON serialization
-static std::string escapeJsonString(const std::string& input)
-{
-    std::string output = "";
-    for (char c : input)
-    {
-        if (c == '"') output += "\\\"";
-        else if (c == '\\') output += "\\\\";
-        else if (c == '/') output += "\\/";
-        else if (c == '\b') output += "\\b";
-        else if (c == '\f') output += "\\f";
-        else if (c == '\n') output += "\\n";
-        else if (c == '\r') output += "\\r";
-        else if (c == '\t') output += "\\t";
-        else output += c;
-    }
-    return output;
-}
-
-// 📂 Escape special characters for CSV format
-static std::string escapeCsvString(const std::string& input)
-{
-    bool needQuotes = false;
-    std::string output = "";
-    for (char c : input)
-    {
-        if (c == '"')
-        {
-            output += "\"\"";
-            needQuotes = true;
-        }
-        else
-        {
-            output += c;
-            if (c == ',' || c == '\n' || c == '\r')
-            {
-                needQuotes = true;
-            }
-        }
-    }
-    if (needQuotes)
-    {
-        return "\"" + output + "\"";
-    }
-    return output;
-}
-
-// 📂 Stateful character-by-character CSV parser
-static std::vector<std::vector<std::string>> parseCsvFile(const std::string& filePath)
-{
-    std::vector<std::vector<std::string>> records;
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file) return records;
-
-    std::vector<std::string> currentRecord;
-    std::string currentField = "";
-    bool inQuotes = false;
-    char c;
-
-    while (file.get(c))
-    {
-        if (inQuotes)
-        {
-            if (c == '"')
-            {
-                char next;
-                if (file.get(next))
-                {
-                    if (next == '"')
-                    {
-                        currentField += '"';
-                    }
-                    else
-                    {
-                        inQuotes = false;
-                        // Put back the next char since it's not part of an escaped quote
-                        file.putback(next);
-                    }
-                }
-                else
-                {
-                    inQuotes = false;
-                }
-            }
-            else
-            {
-                currentField += c;
-            }
-        }
-        else
-        {
-            if (c == '"')
-            {
-                inQuotes = true;
-            }
-            else if (c == ',')
-            {
-                currentRecord.push_back(currentField);
-                currentField = "";
-            }
-            else if (c == '\n')
-            {
-                currentRecord.push_back(currentField);
-                records.push_back(currentRecord);
-                currentRecord.clear();
-                currentField = "";
-            }
-            else if (c == '\r')
-            {
-                // skip carriage return
-            }
-            else
-            {
-                currentField += c;
-            }
-        }
-    }
-    if (!currentField.empty() || !currentRecord.empty())
-    {
-        currentRecord.push_back(currentField);
-        records.push_back(currentRecord);
-    }
-    return records;
-}
-
-// 🔍 Cryptographically secure random password generator
-static std::string generatePassword(int length, bool upper, bool lower, bool digit, bool symbol)
-{
-    if (length < 4) length = 16;
-    
-    std::string uppers = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    std::string lowers = "abcdefghijklmnopqrstuvwxyz";
-    std::string digits = "0123456789";
-    std::string symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?";
-    
-    std::string pool = "";
-    std::string result = "";
-    
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    
-    std::vector<std::string> requiredSets;
-    if (upper) { pool += uppers; requiredSets.push_back(uppers); }
-    if (lower) { pool += lowers; requiredSets.push_back(lowers); }
-    if (digit) { pool += digits; requiredSets.push_back(digits); }
-    if (symbol) { pool += symbols; requiredSets.push_back(symbols); }
-    
-    if (pool.empty()) {
-        pool = uppers + lowers + digits + symbols;
-        requiredSets.push_back(uppers);
-        requiredSets.push_back(lowers);
-        requiredSets.push_back(digits);
-        requiredSets.push_back(symbols);
-    }
-    
-    // Ensure one character from each selected set is guaranteed
-    for (const auto& s : requiredSets) {
-        std::uniform_int_distribution<size_t> dist(0, s.size() - 1);
-        result += s[dist(generator)];
-    }
-    
-    std::uniform_int_distribution<size_t> dist(0, pool.size() - 1);
-    while (result.size() < static_cast<size_t>(length)) {
-        result += pool[dist(generator)];
-    }
-    
-    std::shuffle(result.begin(), result.end(), generator);
-    
-    return result;
-}
-
-// 🔍 Lightweight positional argument extractor from JSON array
-static std::string getArg(const std::string& req, size_t index)
-{
-    size_t pos = 0;
-    for (size_t i = 0; i <= index; ++i)
-    {
-        pos = req.find("\"", pos);
-        if (pos == std::string::npos) return "";
-        size_t end = req.find("\"", pos + 1);
-        while (end != std::string::npos && req[end - 1] == '\\') {
-            end = req.find("\"", end + 1);
-        }
-        if (end == std::string::npos) return "";
-        if (i == index) {
-            std::string val = req.substr(pos + 1, end - pos - 1);
-            std::string unescaped = "";
-            for (size_t j = 0; j < val.length(); ++j) {
-                if (val[j] == '\\' && j + 1 < val.length()) {
-                    unescaped += val[j + 1];
-                    j++;
-                } else {
-                    unescaped += val[j];
-                }
-            }
-            return unescaped;
-        }
-        pos = end + 1;
-    }
-    return "";
-}
+// Utility helper functions have been moved to include/utils and src/utils.
 
 #ifdef _WIN32
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR /*lpCmdLine*/, int /*nCmdShow*/)
@@ -851,6 +216,7 @@ int main()
                 json += "\"notes\":\"" + escapeJsonString(c.getNotes()) + "\",";
                 json += "\"attachmentName\":\"" + escapeJsonString(c.getAttachmentName()) + "\",";
                 json += "\"attachmentData\":\"" + c.getAttachmentData() + "\","; // Base64 data doesn't need escaping
+                json += "\"category\":\"" + escapeJsonString(c.getCategory()) + "\",";
 
                 json += "\"history\":[";
                 const auto& history = c.getPasswordHistory();
@@ -866,8 +232,87 @@ int main()
             return json;
         });
 
+        // 🔹 Bind: Capture JS Console Logs
+        w.bind("api_console_log", [&](std::string req) -> std::string {
+            {
+                std::ofstream log("data/api_debug.log", std::ios::app);
+                log << "JS Log: " << getArg(req, 0) << "\n";
+            }
+            return "{}";
+        });
+
+        // 🔹 Bind: Get Theme (plain text, default: zinc)
+        w.bind("api_get_theme", [&](std::string /*req*/) -> std::string {
+            std::ifstream file("data/user_theme.dat");
+            if (!file) {
+                return "\"zinc\"";
+            }
+            std::string theme;
+            std::getline(file, theme);
+            if (theme.empty()) theme = "zinc";
+            return "\"" + theme + "\"";
+        });
+
+        // 🔹 Bind: Set Theme (plain text)
+        w.bind("api_set_theme", [&](std::string req) -> std::string {
+            std::string theme = getArg(req, 0);
+            std::ofstream file("data/user_theme.dat");
+            if (file) {
+                file << theme;
+                return "{\"success\":true}";
+            }
+            return "{\"success\":false}";
+        });
+
+        // 🔹 Bind: Get settings (encrypted with master password)
+        w.bind("api_get_settings", [&](std::string /*req*/) -> std::string {
+            if (masterPassword.empty()) {
+                return "{\"error\":\"Unauthorized\"}";
+            }
+            std::ifstream file("data/user_settings.dat", std::ios::binary);
+            if (!file) {
+                return "{}";
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            file.close();
+
+            Encryption encryption;
+            auto decrypted = encryption.decrypt(buffer.str(), masterPassword);
+            if (!decrypted) {
+                return "{}";
+            }
+            return *decrypted;
+        });
+
+        // 🔹 Bind: Save settings (encrypted with master password)
+        w.bind("api_save_settings", [&](std::string req) -> std::string {
+            if (masterPassword.empty()) {
+                return "{\"error\":\"Unauthorized\"}";
+            }
+            std::string settingsJson = getArg(req, 0);
+            secureLockString(settingsJson);
+
+            Encryption encryption;
+            std::string ciphertext = encryption.encrypt(settingsJson, masterPassword);
+            secureWipeString(settingsJson);
+
+            std::ofstream file("data/user_settings.dat", std::ios::binary);
+            if (file) {
+                file.write(ciphertext.data(), ciphertext.size());
+                file.close();
+                return "{\"success\":true}";
+            }
+            return "{\"success\":false}";
+        });
+
+
         // 🔹 Bind: Add / Update Credential (archives old password to history)
         w.bind("api_add_credential", [&](std::string req) -> std::string {
+            {
+                std::ofstream log("data/api_debug.log", std::ios::app);
+                log << "req: " << req << "\n";
+            }
             if (masterPassword.empty()) {
                 return "{\"error\":\"Unauthorized\"}";
             }
@@ -882,6 +327,9 @@ int main()
             std::string attachmentName = getArg(req, 5);
             std::string attachmentData = getArg(req, 6);
             secureLockString(attachmentData);
+            std::string category = getArg(req, 7);
+            if (category.empty()) category = "Login";
+            secureLockString(category);
 
             std::string json;
             if (site.empty() || user.empty() || pass.empty()) {
@@ -892,6 +340,7 @@ int main()
                 credential.setNotes(notes);
                 credential.setAttachmentName(attachmentName);
                 credential.setAttachmentData(attachmentData);
+                credential.setCategory(category);
 
                 if (vaultManager.addOrUpdateCredential(credential)) {
                     storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
@@ -904,6 +353,7 @@ int main()
             secureWipeString(totpSecret);
             secureWipeString(notes);
             secureWipeString(attachmentData);
+            secureWipeString(category);
             return json;
         });
 

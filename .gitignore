@@ -70,12 +70,8 @@ Testing/
 .cache/
 
 # Local application database & user configuration
-data/*.dat
-data/*.tmp
-data/settings.dat
+data/
 
 # IDE settings
-.idea/workspace.xml
-.idea/shelf/
-.idea/caches/
+.idea/
 cmake-build-*/
