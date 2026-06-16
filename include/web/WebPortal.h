@@ -2361,7 +2361,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 btnCopy.textContent = "Copy";
                 btnCopy.onclick = (e) => {
                     e.stopPropagation();
-                    copyPassword(c.password);
+                    openVerifyModal("copy", c);
                 };
                 tdActions.appendChild(btnCopy);
 
@@ -2388,7 +2388,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 btnEdit.style.borderColor = "rgba(99,102,241,0.4)";
                 btnEdit.onclick = (e) => {
                     e.stopPropagation();
-                    openEditModal(c);
+                    openVerifyModal("edit", c);
                 };
                 tdActions.appendChild(btnEdit);
 
@@ -2835,11 +2835,15 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             
             const prompt = document.getElementById("verify-prompt");
             if (action === "delete") {
-                prompt.textContent = `Please enter your master password to confirm deleting credentials for "${data.site}".`;
+                prompt.textContent = `Enter your master password to confirm deleting credentials for "${data.site}".`;
             } else if (action === "export") {
-                prompt.textContent = "Please enter your master password to authorize exporting the database to CSV.";
+                prompt.textContent = "Enter your master password to authorize exporting the database to CSV.";
+            } else if (action === "copy") {
+                prompt.textContent = `Enter your master password to copy the password for "${data.website}".`;
+            } else if (action === "edit") {
+                prompt.textContent = `Enter your master password to edit credentials for "${data.website}".`;
             } else {
-                prompt.textContent = "Please enter your master password to reveal this credential.";
+                prompt.textContent = "Enter your master password to reveal this credential.";
             }
 
             document.getElementById("verify-modal").classList.remove("hidden");
@@ -2865,6 +2869,17 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                             if (pendingVerifyData) {
                                 visiblePasswords.add(pendingVerifyData);
                                 renderTable();
+                            }
+                        } else if (pendingVerifyAction === "copy") {
+                            if (pendingVerifyData) {
+                                copyPassword(pendingVerifyData.password);
+                            }
+                        } else if (pendingVerifyAction === "edit") {
+                            if (pendingVerifyData) {
+                                const cred = pendingVerifyData;
+                                closeVerifyModal();
+                                openEditModal(cred);
+                                return;
                             }
                         } else if (pendingVerifyAction === "delete") {
                             if (pendingVerifyData) {
