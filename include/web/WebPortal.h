@@ -972,6 +972,76 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- ✏️ Edit Credential Modal -->
+        <div id="edit-credential-modal" class="modal-overlay hidden" style="z-index: 9996; overflow-y: auto;">
+            <div class="modal-card" style="max-width: 540px; width: 100%; max-height: 90vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="color: var(--accent-primary); margin: 0;">✏️ Edit Credential</h3>
+                    <button onclick="closeEditModal()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.4em;line-height:1;">✕</button>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-category">Category</label>
+                    <select id="edit-category" style="width:100%;">
+                        <option value="Login">Login</option>
+                        <option value="Secure Note">Secure Note</option>
+                        <option value="Credit Card">Credit Card</option>
+                        <option value="Identity">Identity</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-site">Website / Title</label>
+                    <input type="text" id="edit-site" placeholder="e.g. google.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-user">Username / Email</label>
+                    <input type="text" id="edit-user" placeholder="e.g. user@email.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-pass">Password</label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="password" id="edit-pass" placeholder="Password" required style="flex:1;" oninput="updateEditStrengthMeter(this.value)">
+                        <button type="button" onclick="(()=>{const p=document.getElementById('edit-pass');p.type=p.type==='password'?'text':'password';})()" class="table-btn" style="height:44px;min-width:60px;">Show</button>
+                    </div>
+                    <!-- Live strength meter -->
+                    <div style="margin-top:6px;">
+                        <div style="background:rgba(255,255,255,0.07);border-radius:4px;height:5px;overflow:hidden;">
+                            <div id="edit-strength-bar" style="height:5px;width:0%;border-radius:4px;transition:width 0.35s ease,background 0.35s ease;"></div>
+                        </div>
+                        <span id="edit-strength-label" style="font-size:0.73em;margin-top:4px;display:block;color:var(--text-secondary);"></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-totp">TOTP Secret (2FA Key) — Optional</label>
+                    <input type="text" id="edit-totp" placeholder="e.g. JBSWY3DPEHPK3PXP">
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-notes">Secure Notes — Optional</label>
+                    <textarea id="edit-notes" placeholder="Recovery keys, pin codes..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-tags">Custom Tags — Optional (comma-separated)</label>
+                    <input type="text" id="edit-tags" placeholder="e.g. Work, Finance">
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-expiry">Password Expiry Date — Optional</label>
+                    <input type="date" id="edit-expiry" style="color-scheme:dark;">
+                </div>
+
+                <div style="display:flex;gap:10px;margin-top:16px;">
+                    <button onclick="closeEditModal()" class="btn btn-secondary" style="flex:1;">Cancel</button>
+                    <button onclick="handleEditCredential()" class="btn btn-primary" style="flex:1;">💾 Save Changes</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 💻 Dashboard Workspace -->
         <div id="dashboard-view" class="dashboard-container hidden">
             
@@ -1063,7 +1133,7 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                                     <th>Website</th>
                                     <th>Username</th>
                                     <th>Password</th>
-                                    <th style="text-align: right; width: 180px;">Actions</th>
+                                    <th style="text-align: right; width: 230px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="table-body">
@@ -2310,6 +2380,18 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 };
                 tdActions.appendChild(btnToggle);
 
+                // Edit Button
+                const btnEdit = document.createElement("button");
+                btnEdit.className = "table-btn";
+                btnEdit.textContent = "✏️ Edit";
+                btnEdit.style.background = "rgba(99,102,241,0.15)";
+                btnEdit.style.borderColor = "rgba(99,102,241,0.4)";
+                btnEdit.onclick = (e) => {
+                    e.stopPropagation();
+                    openEditModal(c);
+                };
+                tdActions.appendChild(btnEdit);
+
                 // Delete Button
                 const btnDelete = document.createElement("button");
                 btnDelete.className = "table-btn table-btn-danger";
@@ -2418,6 +2500,109 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 }
             })
             .catch(() => showToast("API request failed.", "error"));
+        }
+
+        // 🔹 Edit Credential Modal
+        let editOriginalSite = "";
+        let editOriginalUser = "";
+
+        function openEditModal(c) {
+            editOriginalSite = c.website;
+            editOriginalUser = c.username;
+
+            // Populate all fields
+            document.getElementById("edit-category").value = c.category || "Login";
+            document.getElementById("edit-site").value = c.website || "";
+            document.getElementById("edit-user").value = c.username || "";
+            document.getElementById("edit-pass").value = c.password || "";
+            document.getElementById("edit-totp").value = c.totp_secret || "";
+            document.getElementById("edit-notes").value = c.notes || "";
+            document.getElementById("edit-expiry").value = c.expiryDate || "";
+            // Tags from localStorage
+            const storedTags = localStorage.getItem("tags||" + c.website + "||" + c.username) || "";
+            document.getElementById("edit-tags").value = storedTags;
+            // Reset pass strength
+            updateEditStrengthMeter(c.password || "");
+            // Show modal
+            document.getElementById("edit-credential-modal").classList.remove("hidden");
+        }
+
+        function closeEditModal() {
+            document.getElementById("edit-credential-modal").classList.add("hidden");
+            document.getElementById("edit-pass").value = "";
+        }
+
+        function updateEditStrengthMeter(pass) {
+            const bar = document.getElementById("edit-strength-bar");
+            const label = document.getElementById("edit-strength-label");
+            if (!bar || !label) return;
+            let score = 0;
+            if (pass.length >= 8)  score += 20;
+            if (pass.length >= 12) score += 20;
+            if (pass.length >= 16) score += 10;
+            if (/[A-Z]/.test(pass)) score += 15;
+            if (/[a-z]/.test(pass)) score += 10;
+            if (/[0-9]/.test(pass)) score += 10;
+            if (/[^A-Za-z0-9]/.test(pass)) score += 15;
+            bar.style.width = score + "%";
+            if (score >= 80) { bar.style.background = "#22c55e"; label.textContent = "Strong"; label.style.color = "#22c55e"; }
+            else if (score >= 55) { bar.style.background = "#f59e0b"; label.textContent = "Moderate"; label.style.color = "#f59e0b"; }
+            else if (score >= 30) { bar.style.background = "#f97316"; label.textContent = "Weak"; label.style.color = "#f97316"; }
+            else { bar.style.background = "#ef4444"; label.textContent = "Very Weak"; label.style.color = "#ef4444"; }
+        }
+
+        function handleEditCredential() {
+            const category = document.getElementById("edit-category").value;
+            const site     = document.getElementById("edit-site").value.trim();
+            const user     = document.getElementById("edit-user").value.trim();
+            const pass     = document.getElementById("edit-pass").value;
+            const totp     = document.getElementById("edit-totp").value || "";
+            const notes    = document.getElementById("edit-notes").value || "";
+            const tags     = document.getElementById("edit-tags").value.trim();
+            const expiry   = document.getElementById("edit-expiry").value || "";
+
+            if (!site || !user || !pass) {
+                showToast("Website, username, and password are required.", "error");
+                return;
+            }
+
+            // If site or user changed, delete the old entry first
+            const siteChanged = (site !== editOriginalSite);
+            const userChanged = (user !== editOriginalUser);
+
+            const doSave = () => {
+                window.api_add_credential(site, user, pass, totp, notes, "", "", category, expiry)
+                .then(data => {
+                    if (data.success) {
+                        // Save tags
+                        if (tags) {
+                            localStorage.setItem("tags||" + site + "||" + user, tags);
+                        } else {
+                            localStorage.removeItem("tags||" + site + "||" + user);
+                        }
+                        // Clean up old key tags if renamed
+                        if (siteChanged || userChanged) {
+                            localStorage.removeItem("tags||" + editOriginalSite + "||" + editOriginalUser);
+                            localStorage.removeItem("fav||" + editOriginalSite + "||" + editOriginalUser);
+                        }
+                        closeEditModal();
+                        showToast("Credential updated and vault saved!", "success");
+                        fetchCredentials();
+                    } else {
+                        showToast(data.error || "Failed to update credential.", "error");
+                    }
+                })
+                .catch(() => showToast("API request failed.", "error"));
+            };
+
+            // Delete old entry if key fields changed
+            if (siteChanged || userChanged) {
+                window.api_delete_credential(editOriginalSite, editOriginalUser)
+                .then(() => doSave())
+                .catch(() => doSave()); // still try save even if delete fails
+            } else {
+                doSave();
+            }
         }
 
         // 🔹 Save changes explicitly
