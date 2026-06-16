@@ -13,7 +13,7 @@ bool VaultManager::addCredential(const Credential& credential)
     return true;
 }
 
-// 🔹 Add or update credential (archives old password into history if updated)
+// 🔹 Add or update credential (archives old password into history if password changed)
 bool VaultManager::addOrUpdateCredential(const Credential& credential)
 {
     auto it = std::find_if(credentials.begin(), credentials.end(),
@@ -24,16 +24,33 @@ bool VaultManager::addOrUpdateCredential(const Credential& credential)
 
     if (it != credentials.end())
     {
+        // Archive old password into history only if it actually changed
         if (it->getPassword() != credential.getPassword())
         {
             std::string oldPass = it->getPassword();
-            it->setPassword(credential.getPassword());
             it->addPasswordToHistory(oldPass);
         }
+
+        // Merge incoming history entries (e.g. from import)
         for (const auto& p : credential.getPasswordHistory())
         {
             it->addPasswordToHistory(p);
         }
+
+        // Update ALL editable fields
+        it->setPassword(credential.getPassword());
+        it->setTotpSecret(credential.getTotpSecret());
+        it->setNotes(credential.getNotes());
+        it->setCategory(credential.getCategory());
+        it->setExpiryDate(credential.getExpiryDate());
+
+        // Only overwrite attachment if a new one was provided
+        if (!credential.getAttachmentName().empty())
+        {
+            it->setAttachmentName(credential.getAttachmentName());
+            it->setAttachmentData(credential.getAttachmentData());
+        }
+
         return true;
     }
 
