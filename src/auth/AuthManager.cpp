@@ -9,6 +9,8 @@
 #include <iomanip>
 #include <vector>
 #include <algorithm>
+#include <string>
+
 
 // 🚨 Secure file wiper
 static void secureWipeFile(const std::filesystem::path& path)
@@ -45,11 +47,11 @@ bool AuthManager::vaultExists() const
     return std::filesystem::exists("data/config.dat");
 }
 
-// 🔹 Create vault password (first run)
-bool AuthManager::createVaultPassword(const std::string& password)
+// 🔹 Create vault password (first run), returns generated recovery key
+std::string AuthManager::createVaultPassword(const std::string& password)
 {
     if (vaultExists())
-        return false;
+        return "";
 
     // 1. Generate a 16-byte cryptographically secure random salt
     std::random_device rd;
@@ -84,8 +86,20 @@ bool AuthManager::createVaultPassword(const std::string& password)
 
     std::string hashHex = toHex(hash);
 
-    // 3. Save config with 0 failed attempts and 0 lockout time, and the version tag
-    return saveConfig(saltHex, hashHex, 0, 0, "SV02");
+    // 3. Generate a secure 32-hex-char recovery key
+    std::uniform_int_distribution<int> dis(0, 15);
+    std::mt19937 gen(rd());
+    const char* hex_chars = "0123456789abcdef";
+    std::string recoveryKey;
+    recoveryKey.reserve(32);
+    for (int i = 0; i < 32; ++i)
+        recoveryKey += hex_chars[dis(gen)];
+
+    // 4. Save config with recovery key
+    if (!saveConfig(saltHex, hashHex, 0, 0, "SV02", recoveryKey))
+        return "";
+
+    return recoveryKey;
 }
 
 // 🔹 Verify vault password
@@ -121,6 +135,7 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
     std::string failedAttemptsStr = parts[2];
     std::string lockUntilStr = parts[3];
     std::string version = (parts.size() >= 5) ? parts[4] : "legacy";
+    std::string storedRecoveryKey = (parts.size() >= 6) ? parts[5] : "";
 
     int currentFailedAttempts = 0;
     try {
@@ -165,8 +180,8 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
 
     if (inputHashHex == storedHashHex)
     {
-        // Reset failed attempts & lockout, preserving version
-        saveConfig(saltHex, storedHashHex, 0, 0, version);
+        // Reset failed attempts & lockout, preserving version and recovery key
+        saveConfig(saltHex, storedHashHex, 0, 0, version, storedRecoveryKey);
         return true;
     }
 
@@ -202,8 +217,99 @@ bool AuthManager::verifyVaultPassword(const std::string& password)
         lockUntilTimestamp = now + lockSeconds;
     }
 
-    saveConfig(saltHex, storedHashHex, currentFailedAttempts, lockUntilTimestamp, version);
+    saveConfig(saltHex, storedHashHex, currentFailedAttempts, lockUntilTimestamp, version, storedRecoveryKey);
     return false;
+}
+
+// 🔹 Change master password (requires current password verification)
+bool AuthManager::changeMasterPassword(const std::string& currentPassword, const std::string& newPassword)
+{
+    if (!verifyVaultPassword(currentPassword))
+        return false;
+
+    // Read existing config to preserve recovery key
+    std::string existingRecoveryKey = getRecoveryKey();
+
+    // Generate new salt
+    std::random_device rd;
+    std::vector<uint8_t> newSalt(16);
+    for (size_t i = 0; i < newSalt.size(); ++i)
+        newSalt[i] = static_cast<uint8_t>(rd() & 0xFF);
+    std::string newSaltHex = toHex(newSalt);
+
+    // Hash new password
+    std::vector<uint8_t> newHash(32);
+    std::vector<uint8_t> workArea(16 * 1024 * 1024);
+
+    crypto_argon2_config cfg;
+    cfg.algorithm = CRYPTO_ARGON2_ID;
+    cfg.nb_blocks = 16384;
+    cfg.nb_passes = 4;
+    cfg.nb_lanes = 1;
+
+    crypto_argon2_inputs inp;
+    inp.pass = reinterpret_cast<const uint8_t*>(newPassword.data());
+    inp.pass_size = static_cast<uint32_t>(newPassword.size());
+    inp.salt = newSalt.data();
+    inp.salt_size = static_cast<uint32_t>(newSalt.size());
+
+    crypto_argon2(newHash.data(), newHash.size(), workArea.data(), cfg, inp, crypto_argon2_no_extras);
+    std::string newHashHex = toHex(newHash);
+
+    return saveConfig(newSaltHex, newHashHex, 0, 0, "SV02", existingRecoveryKey);
+}
+
+// 🔹 Reset master password via recovery key
+bool AuthManager::resetMasterPasswordWithKey(const std::string& recoveryKey, const std::string& newPassword)
+{
+    std::string storedKey = getRecoveryKey();
+    if (storedKey.empty() || storedKey != recoveryKey)
+        return false;
+
+    // Generate new salt and hash for the new password
+    std::random_device rd;
+    std::vector<uint8_t> newSalt(16);
+    for (size_t i = 0; i < newSalt.size(); ++i)
+        newSalt[i] = static_cast<uint8_t>(rd() & 0xFF);
+    std::string newSaltHex = toHex(newSalt);
+
+    std::vector<uint8_t> newHash(32);
+    std::vector<uint8_t> workArea(16 * 1024 * 1024);
+
+    crypto_argon2_config cfg;
+    cfg.algorithm = CRYPTO_ARGON2_ID;
+    cfg.nb_blocks = 16384;
+    cfg.nb_passes = 4;
+    cfg.nb_lanes = 1;
+
+    crypto_argon2_inputs inp;
+    inp.pass = reinterpret_cast<const uint8_t*>(newPassword.data());
+    inp.pass_size = static_cast<uint32_t>(newPassword.size());
+    inp.salt = newSalt.data();
+    inp.salt_size = static_cast<uint32_t>(newSalt.size());
+
+    crypto_argon2(newHash.data(), newHash.size(), workArea.data(), cfg, inp, crypto_argon2_no_extras);
+    std::string newHashHex = toHex(newHash);
+
+    // Preserve the same recovery key after reset
+    return saveConfig(newSaltHex, newHashHex, 0, 0, "SV02", storedKey);
+}
+
+// 🔹 Get recovery key from config
+std::string AuthManager::getRecoveryKey() const
+{
+    std::ifstream file("data/config.dat");
+    if (!file) return "";
+    std::string line;
+    if (!std::getline(file, line)) return "";
+    // Format: salt|hash|failedAttempts|lockUntil|version|recoveryKey
+    std::vector<std::string> parts;
+    std::stringstream ss(line);
+    std::string part;
+    while (std::getline(ss, part, '|'))
+        parts.push_back(part);
+    if (parts.size() >= 6) return parts[5];
+    return "";
 }
 
 // 🔹 Check if user is temporarily locked
@@ -219,16 +325,20 @@ long long AuthManager::getLockoutRemainingTime() const
     if (!file)
         return 0;
 
-    std::string saltHex, storedHashHex;
-    std::string failedAttemptsStr, lockUntilStr;
-    
-    if (std::getline(file, saltHex, '|') &&
-        std::getline(file, storedHashHex, '|') &&
-        std::getline(file, failedAttemptsStr, '|') &&
-        std::getline(file, lockUntilStr))
+    std::string line;
+    if (!std::getline(file, line))
+        return 0;
+
+    std::vector<std::string> parts;
+    std::stringstream ss(line);
+    std::string part;
+    while (std::getline(ss, part, '|'))
+        parts.push_back(part);
+
+    if (parts.size() >= 4)
     {
         try {
-            long long lockUntilTimestamp = std::stoll(lockUntilStr);
+            long long lockUntilTimestamp = std::stoll(parts[3]);
             auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             if (now < lockUntilTimestamp)
             {
@@ -239,8 +349,9 @@ long long AuthManager::getLockoutRemainingTime() const
     return 0;
 }
 
+
 // 🔐 Persistent config helper
-bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil, const std::string& version) const
+bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, int failedAttempts, long long lockUntil, const std::string& version, const std::string& recoveryKey) const
 {
     std::filesystem::create_directories("data");
     std::ofstream file("data/config.dat");
@@ -249,9 +360,9 @@ bool AuthManager::saveConfig(const std::string& salt, const std::string& hash, i
 
     file << salt << "|" << hash << "|" << failedAttempts << "|" << lockUntil;
     if (!version.empty())
-    {
         file << "|" << version;
-    }
+    if (!recoveryKey.empty())
+        file << "|" << recoveryKey;
     return true;
 }
 

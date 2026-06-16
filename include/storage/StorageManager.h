@@ -17,14 +17,20 @@
 class StorageManager
 {
 public:
-    // 🔹 Save credentials securely
+    // 🔹 Save credentials securely with recovery key
+    bool saveVault(
+        const std::vector<Credential>& credentials,
+        const std::string& password,
+        const std::string& recoveryKey
+    );
+    // Existing overload retained for compatibility (calls with empty recovery key)
     bool saveVault(
         const std::vector<Credential>& credentials,
         const std::string& password
     );
 
-    // 🔹 Load credentials safely
-    std::optional<std::vector<Credential>> loadVault(
+    // 🔹 Load credentials safely, also returns stored recovery key
+    std::optional<std::pair<std::vector<Credential>, std::string>> loadVault(
         const std::string& password
     );
 

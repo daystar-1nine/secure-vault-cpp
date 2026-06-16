@@ -929,7 +929,47 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 </div>
                 
                 <button type="submit" id="unlock-btn" class="btn btn-primary">Unlock Database</button>
+                <div style="text-align: center; margin-top: 10px;">
+                    <button type="button" onclick="openResetModal()" style="background: none; border: none; color: var(--accent-primary); cursor: pointer; font-size: 0.85em; text-decoration: underline;">Forgot password? Reset via Recovery Key</button>
+                </div>
             </form>
+        </div>
+
+        <!-- 🔑 Recovery Key Display Modal (shown once after setup) -->
+        <div id="recovery-key-modal" class="modal-overlay hidden" style="z-index: 9999;">
+            <div class="modal-card" style="max-width: 520px; text-align: center;">
+                <div style="font-size: 2.5em; margin-bottom: 12px;">🔑</div>
+                <h3 style="margin-bottom: 8px; color: var(--accent-primary);">Save Your Recovery Key</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9em;">This key can reset your master password. <strong style="color: var(--accent-red);">Store it safely — it will not be shown again.</strong></p>
+                <div id="recovery-key-display" style="background: rgba(10,10,15,0.8); border: 1px solid var(--accent-primary); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 1.1em; letter-spacing: 0.1em; color: var(--accent-primary); word-break: break-all; margin-bottom: 16px;"></div>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="copyRecoveryKey()" class="btn btn-secondary" style="flex: 1;">📋 Copy Key</button>
+                    <button onclick="closeRecoveryKeyModal()" class="btn btn-primary" style="flex: 1;">✅ I've Saved It</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🔄 Reset Password Modal -->
+        <div id="reset-password-modal" class="modal-overlay hidden" style="z-index: 9998;">
+            <div class="modal-card" style="max-width: 440px;">
+                <h3 style="margin-bottom: 16px; color: var(--accent-primary);">🔄 Reset Master Password</h3>
+                <div class="form-group">
+                    <label for="reset-recovery-key">Recovery Key</label>
+                    <input type="text" id="reset-recovery-key" placeholder="Enter your 32-character recovery key" style="font-family: monospace;">
+                </div>
+                <div class="form-group">
+                    <label for="reset-new-pass">New Master Password</label>
+                    <input type="password" id="reset-new-pass" placeholder="Min 12 chars, mixed case + symbol">
+                </div>
+                <div class="form-group">
+                    <label for="reset-confirm-pass">Confirm New Password</label>
+                    <input type="password" id="reset-confirm-pass" placeholder="Confirm new password">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 12px;">
+                    <button onclick="closeResetModal()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                    <button onclick="handleResetPassword()" class="btn btn-primary" style="flex: 1;">Reset Password</button>
+                </div>
+            </div>
         </div>
 
         <!-- 💻 Dashboard Workspace -->
@@ -1247,9 +1287,62 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
 
                     <div class="settings-section">
                         <div class="settings-title">Backup & Portability</div>
-                        <div style="display: flex; gap: 10px; margin-top: 8px;">
+                        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
                             <button onclick="importCSV()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Import CSV</button>
                             <button onclick="openExportModal()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Export CSV</button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+                            <button onclick="importJSON()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Import JSON (Bitwarden)</button>
+                            <button onclick="openExportVaultModal()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">Export Encrypted Vault</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="settings-title">Security</div>
+                        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+                            <button onclick="openChangePasswordModal()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">🔑 Change Master Password</button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+                            <button onclick="showStoredRecoveryKey()" class="btn btn-secondary" style="flex: 1; font-size: 0.85em; padding: 8px 12px;">🔐 View Recovery Key</button>
+                        </div>
+                    </div>
+
+                    <!-- Change Password Modal (inline) -->
+                    <div id="change-password-modal" class="modal-overlay hidden" style="z-index: 9997;">
+                        <div class="modal-card" style="max-width: 420px;">
+                            <h3 style="margin-bottom: 16px; color: var(--accent-primary);">🔑 Change Master Password</h3>
+                            <div class="form-group">
+                                <label for="cp-current">Current Password</label>
+                                <input type="password" id="cp-current" placeholder="Current master password">
+                            </div>
+                            <div class="form-group">
+                                <label for="cp-new">New Password</label>
+                                <input type="password" id="cp-new" placeholder="Min 12 chars, mixed + symbol">
+                            </div>
+                            <div class="form-group">
+                                <label for="cp-confirm">Confirm New Password</label>
+                                <input type="password" id="cp-confirm" placeholder="Confirm new password">
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 12px;">
+                                <button onclick="closeChangePasswordModal()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                                <button onclick="handleChangePassword()" class="btn btn-primary" style="flex: 1;">Update Password</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Export Vault Modal (inline) -->
+                    <div id="export-vault-modal" class="modal-overlay hidden" style="z-index: 9997;">
+                        <div class="modal-card" style="max-width: 400px; text-align: center;">
+                            <h3 style="margin-bottom: 12px; color: var(--accent-primary);">🔒 Export Encrypted Vault</h3>
+                            <p style="color: var(--text-secondary); font-size: 0.9em; margin-bottom: 16px;">Your vault will be encrypted with your master password and saved as a <code>.vault</code> file.</p>
+                            <div class="form-group">
+                                <label for="export-vault-pass">Confirm Master Password</label>
+                                <input type="password" id="export-vault-pass" placeholder="Enter master password">
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 12px;">
+                                <button onclick="closeExportVaultModal()" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+                                <button onclick="doExportVault()" class="btn btn-primary" style="flex: 1;">Export</button>
+                            </div>
                         </div>
                     </div>
 
@@ -1847,13 +1940,61 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                 document.getElementById("strength-meter-container").style.display = "none";
 
                 if (data.success) {
-                    showToast("Vault initialized successfully! Please login.", "success");
+                    // Show recovery key modal if returned
+                    if (data.recoveryKey) {
+                        document.getElementById("recovery-key-display").textContent = data.recoveryKey;
+                        document.getElementById("recovery-key-modal").classList.remove("hidden");
+                    } else {
+                        showToast("Vault initialized successfully! Please login.", "success");
+                    }
                     checkVaultStatus();
                 } else {
                     showToast(data.error || "Failed to initialize vault.", "error");
                 }
             })
             .catch(() => showToast("API request failed.", "error"));
+        }
+
+        // 🔹 Recovery Key Modal
+        function copyRecoveryKey() {
+            const key = document.getElementById("recovery-key-display").textContent;
+            navigator.clipboard.writeText(key).catch(() => {});
+            showToast("Recovery key copied to clipboard!", "success");
+        }
+        function closeRecoveryKeyModal() {
+            document.getElementById("recovery-key-modal").classList.add("hidden");
+            showToast("Vault ready. Please login.", "success");
+        }
+
+        // 🔹 Reset Password Modal
+        function openResetModal() {
+            document.getElementById("reset-recovery-key").value = "";
+            document.getElementById("reset-new-pass").value = "";
+            document.getElementById("reset-confirm-pass").value = "";
+            document.getElementById("reset-password-modal").classList.remove("hidden");
+        }
+        function closeResetModal() {
+            document.getElementById("reset-password-modal").classList.add("hidden");
+        }
+        function handleResetPassword() {
+            const key = document.getElementById("reset-recovery-key").value.trim();
+            const newPass = document.getElementById("reset-new-pass").value;
+            const confirmPass = document.getElementById("reset-confirm-pass").value;
+            if (!key) { showToast("Recovery key is required.", "error"); return; }
+            if (newPass !== confirmPass) { showToast("Passwords do not match.", "error"); return; }
+            if (newPass.length < 12) { showToast("Password must be at least 12 characters.", "error"); return; }
+            window.api_reset_password(key, newPass)
+            .then(data => {
+                document.getElementById("reset-new-pass").value = "";
+                document.getElementById("reset-confirm-pass").value = "";
+                if (data.success) {
+                    closeResetModal();
+                    showToast("Password reset successful! Please login with your new password.", "success");
+                } else {
+                    showToast(data.error || "Reset failed.", "error");
+                }
+            })
+            .catch(() => showToast("Reset failed.", "error"));
         }
 
         // 🔹 Handle Login Submit
@@ -2905,6 +3046,90 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                     }
                 })
                 .catch(() => showToast("Import failed.", "error"));
+        }
+
+        // 🔹 JSON Import (Bitwarden)
+        function importJSON() {
+            window.api_import_json()
+                .then(data => {
+                    if (data.success) {
+                        showToast(`Successfully imported ${data.imported} credentials from JSON!`, "success");
+                        fetchCredentials();
+                    } else {
+                        showToast(data.error || "JSON import failed.", "error");
+                    }
+                })
+                .catch(() => showToast("JSON import failed.", "error"));
+        }
+
+        // 🔹 Encrypted Vault Export
+        function openExportVaultModal() {
+            document.getElementById("export-vault-pass").value = "";
+            document.getElementById("export-vault-modal").classList.remove("hidden");
+        }
+        function closeExportVaultModal() {
+            document.getElementById("export-vault-modal").classList.add("hidden");
+        }
+        function doExportVault() {
+            const pass = document.getElementById("export-vault-pass").value;
+            if (!pass) { showToast("Please enter master password.", "error"); return; }
+            window.api_export_vault(pass)
+            .then(data => {
+                document.getElementById("export-vault-pass").value = "";
+                if (data.success) {
+                    closeExportVaultModal();
+                    showToast(`Vault exported to: ${data.path}`, "success");
+                } else {
+                    showToast(data.error || "Export failed.", "error");
+                }
+            })
+            .catch(() => showToast("Export failed.", "error"));
+        }
+
+        // 🔹 Change Master Password
+        function openChangePasswordModal() {
+            document.getElementById("cp-current").value = "";
+            document.getElementById("cp-new").value = "";
+            document.getElementById("cp-confirm").value = "";
+            document.getElementById("change-password-modal").classList.remove("hidden");
+        }
+        function closeChangePasswordModal() {
+            document.getElementById("change-password-modal").classList.add("hidden");
+        }
+        function handleChangePassword() {
+            const curr = document.getElementById("cp-current").value;
+            const newp = document.getElementById("cp-new").value;
+            const conf = document.getElementById("cp-confirm").value;
+            if (!curr) { showToast("Please enter current password.", "error"); return; }
+            if (newp !== conf) { showToast("New passwords do not match.", "error"); return; }
+            if (newp.length < 12) { showToast("New password must be at least 12 characters.", "error"); return; }
+            window.api_change_password(curr, newp)
+            .then(data => {
+                document.getElementById("cp-current").value = "";
+                document.getElementById("cp-new").value = "";
+                document.getElementById("cp-confirm").value = "";
+                if (data.success) {
+                    closeChangePasswordModal();
+                    showToast("Master password changed successfully!", "success");
+                } else {
+                    showToast(data.error || "Failed to change password.", "error");
+                }
+            })
+            .catch(() => showToast("Failed to change password.", "error"));
+        }
+
+        // 🔹 View stored recovery key
+        function showStoredRecoveryKey() {
+            window.api_get_recovery_key()
+            .then(data => {
+                if (data.success && data.recoveryKey) {
+                    document.getElementById("recovery-key-display").textContent = data.recoveryKey;
+                    document.getElementById("recovery-key-modal").classList.remove("hidden");
+                } else {
+                    showToast(data.error || "No recovery key found.", "error");
+                }
+            })
+            .catch(() => showToast("Failed to retrieve recovery key.", "error"));
         }
 
         // 🔹 Password History modal functions

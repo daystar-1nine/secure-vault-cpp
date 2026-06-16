@@ -6,10 +6,11 @@
 #include <chrono>
 #include <algorithm>
 
-// 🔹 Save vault with atomic write and automatic backups
+// 🔹 Save vault with atomic write, automatic backups, and optional recovery key
 bool StorageManager::saveVault(
     const std::vector<Credential>& credentials,
-    const std::string& password
+    const std::string& password,
+    const std::string& /*recoveryKey*/  // recovery key stored in config.dat by AuthManager
 )
 {
     std::filesystem::create_directories("data");
@@ -70,8 +71,17 @@ bool StorageManager::saveVault(
     return true;
 }
 
-// 🔹 Load vault safely
-std::optional<std::vector<Credential>> StorageManager::loadVault(
+// 🔹 Compatibility overload (no recovery key needed - stored separately in config.dat)
+bool StorageManager::saveVault(
+    const std::vector<Credential>& credentials,
+    const std::string& password
+)
+{
+    return saveVault(credentials, password, "");
+}
+
+// 🔹 Load vault safely, returns credentials + stored recovery key (always "" here, key is in config.dat)
+std::optional<std::pair<std::vector<Credential>, std::string>> StorageManager::loadVault(
     const std::string& password
 )
 {
@@ -94,7 +104,7 @@ std::optional<std::vector<Credential>> StorageManager::loadVault(
     // Deserialize
     auto credentials = deserializeAll(*decrypted);
 
-    return credentials;
+    return std::make_pair(credentials, std::string(""));
 }
 
 // 🔒 Serialize all credentials
@@ -133,4 +143,4 @@ std::vector<Credential> StorageManager::deserializeAll(
     }
 
     return credentials;
-}
+}

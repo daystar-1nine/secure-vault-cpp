@@ -1,4 +1,4 @@
-#include "auth/AuthManager.h" // rebuild trigger 3
+#include "auth/AuthManager.h" // rebuild trigger 4
 #include "vault/VaultManager.h"
 #include "storage/StorageManager.h"
 #include "models/Credential.h"
@@ -8,6 +8,7 @@
 #include "utils/SystemUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/GeneratorUtils.h"
+#include "encryption/Encryption.h"
 
 #include <webview.h>
 
@@ -136,7 +137,7 @@ int main()
 
 
 
-        // 🔹 Bind: Create Vault Master Password
+        // 🔹 Bind: Create Vault Master Password (shows recovery key on first setup)
         w.bind("api_setup", [&](std::string req) -> std::string {
             std::string pass = getArg(req, 0);
             secureLockString(pass);
@@ -144,12 +145,13 @@ int main()
             if (pass.empty()) {
                 json = "{\"success\":false,\"error\":\"Password cannot be empty.\"}";
             } else {
-                if (authManager.createVaultPassword(pass)) {
+                std::string recoveryKey = authManager.createVaultPassword(pass);
+                if (!recoveryKey.empty()) {
                     masterPassword = pass;
                     secureLockString(masterPassword);
                     // Save empty vault to initialize
                     storageManager.saveVault(std::vector<Credential>(), masterPassword);
-                    json = "{\"success\":true}";
+                    json = "{\"success\":true,\"recoveryKey\":\"" + recoveryKey + "\"}";
                 } else {
                     json = "{\"success\":false,\"error\":\"Failed to initialize vault config.\"}";
                 }
@@ -169,7 +171,7 @@ int main()
                 auto loaded = storageManager.loadVault(masterPassword);
                 vaultManager.clearVault();
                 if (loaded) {
-                    for (const auto& c : *loaded) {
+                    for (const auto& c : loaded->first) {
                         vaultManager.addCredential(c);
                     }
                 }
@@ -687,6 +689,187 @@ int main()
             bool verified = authManager.verifyVaultPassword(pass);
             secureWipeString(pass);
             return verified ? "{\"success\":true}" : "{\"success\":false}";
+        });
+
+        // 🔹 Bind: Get recovery key (for display after login)
+        w.bind("api_get_recovery_key", [&](std::string /*req*/) -> std::string {
+            if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
+            std::string key = authManager.getRecoveryKey();
+            if (key.empty()) return "{\"success\":false,\"error\":\"No recovery key found.\"}";
+            return "{\"success\":true,\"recoveryKey\":\"" + key + "\"}";
+        });
+
+        // 🔹 Bind: Change master password (old → new, re-encrypts vault)
+        w.bind("api_change_password", [&](std::string req) -> std::string {
+            if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
+            std::string oldPass = getArg(req, 0);
+            std::string newPass = getArg(req, 1);
+            secureLockString(oldPass);
+            secureLockString(newPass);
+            std::string json;
+            if (newPass.empty()) {
+                json = "{\"success\":false,\"error\":\"New password cannot be empty.\"}";
+            } else if (authManager.changeMasterPassword(oldPass, newPass)) {
+                // Re-encrypt vault with new password
+                storageManager.saveVault(vaultManager.getAllCredentials(), newPass);
+                masterPassword = newPass;
+                secureLockString(masterPassword);
+                json = "{\"success\":true}";
+            } else {
+                json = "{\"success\":false,\"error\":\"Current password is incorrect.\"}";
+            }
+            secureWipeString(oldPass);
+            secureWipeString(newPass);
+            return json;
+        });
+
+        // 🔹 Bind: Reset master password via recovery key (re-encrypts vault)
+        w.bind("api_reset_password", [&](std::string req) -> std::string {
+            std::string recoveryKey = getArg(req, 0);
+            std::string newPass = getArg(req, 1);
+            secureLockString(newPass);
+            std::string json;
+            if (newPass.empty() || recoveryKey.empty()) {
+                json = "{\"success\":false,\"error\":\"Recovery key and new password are required.\"}";
+            } else if (authManager.resetMasterPasswordWithKey(recoveryKey, newPass)) {
+                // Load vault with old masterPassword (if available) then re-encrypt
+                if (!masterPassword.empty()) {
+                    storageManager.saveVault(vaultManager.getAllCredentials(), newPass);
+                }
+                // If vault is locked, user must log in again after reset
+                secureWipeString(masterPassword);
+                vaultManager.clearVault();
+                json = "{\"success\":true}";
+            } else {
+                json = "{\"success\":false,\"error\":\"Invalid recovery key.\"}";
+            }
+            secureWipeString(recoveryKey);
+            secureWipeString(newPass);
+            return json;
+        });
+
+        // 🔹 Bind: Export encrypted vault (.vault file)
+        w.bind("api_export_vault", [&](std::string req) -> std::string {
+            if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
+            std::string verifyPass = getArg(req, 0);
+            secureLockString(verifyPass);
+            if (!authManager.verifyVaultPassword(verifyPass)) {
+                secureWipeString(verifyPass);
+                return "{\"success\":false,\"error\":\"Invalid master password.\"}";
+            }
+            secureWipeString(verifyPass);
+            std::string json;
+#ifdef _WIN32
+            HWND hwnd = reinterpret_cast<HWND>(w.window().value());
+            char szFile[MAX_PATH] = {0};
+            OPENFILENAMEA ofn;
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "Vault Files (*.vault)\0*.vault\0All Files (*.*)\0*.*\0";
+            ofn.lpstrDefExt = "vault";
+            ofn.nFilterIndex = 1;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+            if (GetSaveFileNameA(&ofn) == TRUE) {
+                std::string savePath(ofn.lpstrFile);
+                // Serialize & encrypt vault data
+                std::ostringstream vaultData;
+                vaultData << "SVAULT_V1\n";
+                for (const auto& c : vaultManager.getAllCredentials()) {
+                    vaultData << c.serialize() << '\n';
+                }
+                Encryption enc;
+                std::string encrypted = enc.encrypt(vaultData.str(), masterPassword);
+                std::ofstream outFile(savePath, std::ios::binary);
+                if (outFile) {
+                    outFile << encrypted;
+                    outFile.close();
+                    json = "{\"success\":true,\"path\":\"" + escapeJsonString(savePath) + "\"}";
+                } else {
+                    json = "{\"success\":false,\"error\":\"Failed to write export file.\"}";
+                }
+            } else {
+                json = "{\"success\":false,\"error\":\"Cancelled\"}";
+            }
+#else
+            json = "{\"success\":false,\"error\":\"Not supported on this platform\"}";
+#endif
+            return json;
+        });
+
+        // 🔹 Bind: Import JSON (Bitwarden/generic JSON format)
+        w.bind("api_import_json", [&](std::string /*req*/) -> std::string {
+            if (masterPassword.empty()) return "{\"error\":\"Unauthorized\"}";
+            std::string json;
+#ifdef _WIN32
+            HWND hwnd = reinterpret_cast<HWND>(w.window().value());
+            char szFile[MAX_PATH] = {0};
+            OPENFILENAMEA ofn;
+            ZeroMemory(&ofn, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = hwnd;
+            ofn.lpstrFile = szFile;
+            ofn.nMaxFile = sizeof(szFile);
+            ofn.lpstrFilter = "JSON Files (*.json)\0*.json\0All Files (*.*)\0*.*\0";
+            ofn.nFilterIndex = 1;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+            if (GetOpenFileNameA(&ofn) == TRUE) {
+                std::string filePath(ofn.lpstrFile);
+                std::ifstream inFile(filePath);
+                if (!inFile) {
+                    return "{\"success\":false,\"error\":\"Cannot open file.\"}";
+                }
+                std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                // Simple Bitwarden JSON parser: find items array
+                int importedCount = 0;
+                // Parse items: look for {"name":"...","login":{"username":"...","password":"..."}}
+                size_t pos = 0;
+                while ((pos = content.find("\"name\"", pos)) != std::string::npos) {
+                    auto extractField = [&](const std::string& key, size_t from) -> std::string {
+                        size_t kpos = content.find('"' + key + '"', from);
+                        if (kpos == std::string::npos) return "";
+                        size_t colon = content.find(':', kpos);
+                        if (colon == std::string::npos) return "";
+                        size_t q1 = content.find('"', colon + 1);
+                        if (q1 == std::string::npos) return "";
+                        size_t q2 = content.find('"', q1 + 1);
+                        if (q2 == std::string::npos) return "";
+                        return content.substr(q1 + 1, q2 - q1 - 1);
+                    };
+
+                    std::string site = extractField("name", pos);
+                    // Find login block
+                    size_t loginPos = content.find("\"login\"", pos);
+                    size_t nextItem = content.find("\"name\"", pos + 1);
+                    if (!site.empty() && loginPos != std::string::npos &&
+                        (nextItem == std::string::npos || loginPos < nextItem)) {
+                        std::string username = extractField("username", loginPos);
+                        std::string password = extractField("password", loginPos);
+                        std::string uriVal = extractField("uri", loginPos);
+                        if (uriVal.empty()) uriVal = site; // fallback to name
+                        if (!username.empty() && !password.empty()) {
+                            Credential cred(uriVal, username, password);
+                            vaultManager.addOrUpdateCredential(cred);
+                            importedCount++;
+                        }
+                    }
+                    pos++;
+                }
+                if (importedCount > 0) {
+                    storageManager.saveVault(vaultManager.getAllCredentials(), masterPassword);
+                }
+                json = "{\"success\":true,\"imported\":" + std::to_string(importedCount) + "}";
+            } else {
+                json = "{\"success\":false,\"error\":\"Cancelled\"}";
+            }
+#else
+            json = "{\"success\":false,\"error\":\"Not supported on this platform\"}";
+#endif
+            return json;
         });
 
         // 🔹 Bind: Cryptographically secure password generator
