@@ -2862,7 +2862,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
             if (!pass) return;
 
             window.api_verify_password(pass)
-                .then(data => {
+                .then(raw => {
+                    const data = (typeof raw === 'string') ? JSON.parse(raw || "{}") : (raw || {});
                     document.getElementById("verify-pass").value = "";
                     if (data.success) {
                         if (pendingVerifyAction === "show") {
@@ -2892,7 +2893,8 @@ const char* const INDEX_HTML_CONTENT = R"rawhtml(<!DOCTYPE html>
                         }
                         closeVerifyModal();
                     } else {
-                        window.api_status().then(status => {
+                        window.api_status().then(rawStatus => {
+                            const status = (typeof rawStatus === 'string') ? JSON.parse(rawStatus || "{}") : (rawStatus || {});
                             if (status.lockoutRemaining > 0) {
                                 handleLock();
                             } else {
